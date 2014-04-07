@@ -15,7 +15,7 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
         beg_ind = tbool.nonzero()[0][0]
         end_ind = beg_ind + ndays
         tbool = np.arange(beg_ind, end_ind, dtype=int)
-    print('Subset time window:', tobs[tbool][0], '->', tobs[tbool][-1])
+    print(('Subset time window:', tobs[tbool][0], '->', tobs[tbool][-1]))
 
     # Get the station names
     statnames = [key for key in inputDict]

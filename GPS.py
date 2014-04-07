@@ -1,5 +1,5 @@
 
-from __future__ import print_function
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
@@ -8,7 +8,7 @@ from .MPClasses import MPInvert, MPWeights, makeSharedArrays
 from scipy.spatial import cKDTree
 from scipy.stats import nanmean
 import SparseConeQP as sp
-from tnipm import TNIPM
+#from tnipm import TNIPM
 import topoutil as tu
 from matutils import dmultl, dmultr
 import tsinsar as ts
@@ -51,7 +51,7 @@ class GPS:
         Transfers data from a dictionary of station classes to self.
         """
         self.clear()
-        for statname, stat in inputDict.iteritems():
+        for statname, stat in inputDict.items():
             self.name.append(statname)
             self.lat.append(stat.lat)
             self.lon.append(stat.lon)
@@ -68,7 +68,7 @@ class GPS:
         """
         Remove the mean of the finite values in each component.
         """
-        for statname, stat in self.statDict.iteritems():
+        for statname, stat in self.statDict.items():
             stat.north -= nanmean(stat.north)
             stat.east -= nanmean(stat.east)
             stat.up -= nanmean(stat.up)
@@ -81,7 +81,7 @@ class GPS:
         Reads GPS data and convert to mm
         """
         self.stns = []
-        for ii in xrange(self.nstat):
+        for ii in range(self.nstat):
             self.stns.append(STN(self.name[ii], gpsdir, format=self.format,
                                  fileKernel=self.fileKernel, dataFactor=dataFactor))
 
@@ -107,7 +107,7 @@ class GPS:
             components = [smodel.north, smodel.east, smodel.up]
             data = [stn.north, stn.east, stn.up]
             # Loop through components
-            for ii in xrange(len(data)):
+            for ii in range(len(data)):
                 comp = components[ii]
                 # Get representation for offset
                 frep = comp.offset
@@ -167,7 +167,7 @@ class GPS:
                 dn = np.nan * np.ones_like(tref)
                 de = np.nan * np.ones_like(tref)
                 du = np.nan * np.ones_like(tref)
-                for i in xrange(stn.tdec.size):
+                for i in range(stn.tdec.size):
                     if stn.tdec[i] < t0 or stn.tdec[i] > tf:
                         continue
                     nndist, ind = tree.query(np.array([stn.tdec[i]]), k=1, eps=1.0)
@@ -185,6 +185,40 @@ class GPS:
                 stn.east = stn.east[bool]
                 stn.up = stn.up[bool]
                 stn.tdec = stn.tdec[bool]
+
+
+    def extended_spinvert(self, tdec, repDict, penalty, cutoffDict, maxiter=4):
+        """
+        Performs sparse inversion of model coefficients on each component. Each
+        station will have its own time representation and its own cutoff.
+        """
+        # Loop over the stations
+        mDicts = {}
+        for statname, stat in self.statDict.items():
+
+            # Construct a G matrix
+            G = np.asarray(ts.Timefn(repDict[statname], tdec-tdec[0])[0], order='C')
+            ndat,Npar = G.shape
+            cutoff = cutoffDict[statname]
+
+            # Loop over the components
+            mDict = {}
+            for comp, w_comp in [('east','w_e'), ('north','w_n'), ('up','w_u')]:
+
+                # Get finite data
+                dat = getattr(stat, comp)
+                ind = np.isfinite(dat)
+                dat = dat[ind]
+                wgt = getattr(stat, w_comp)[ind]
+
+                # Instantiate a solver
+                solver = sp.BaseOpt(cutoff=cutoff, maxiter=maxiter, weightingMethod='log')
+
+                # Perform estimation
+                mDict[comp] = solver.invert(dmultl(wgt, G[ind,:]), wgt*dat, penalty)[0]
+            mDicts[statname] = (mDict, G)
+
+        return mDicts
 
 
     def spinvert(self, tdec, rep, penalty, cutoff, maxiter=4, nproc=1):
@@ -236,7 +270,7 @@ class GPS:
             else:
                 procN = nominal_load
             # Subset the data
-            ind = xrange(istart, istart+procN)
+            ind = range(istart, istart+procN)
             subbed = [[boolList[index] for index in ind], 
                       north[:,ind], east[:,ind], up[:,ind], 
                       w_n[:,ind], w_e[:,ind], w_u[:,ind],
@@ -277,7 +311,7 @@ class GPS:
 
         # Find indices of valid data for each station
         bool_list = []
-        for i in xrange(self.nstat):
+        for i in range(self.nstat):
             bool_list.append(np.isfinite(north[:,i]))
         
         # Initialize solver
@@ -290,11 +324,11 @@ class GPS:
         m_up = np.zeros((Npar,self.nstat))
         pen_old = np.zeros((Npar-cutoff,))
         factor = 1
-        for ii in xrange(maxiter):
+        for ii in range(maxiter):
             print(' - at iteration', ii)
             #allpen = 0.0
             allpen = np.zeros((self.nstat, Npar-cutoff))
-            for jj in xrange(self.nstat):
+            for jj in range(self.nstat):
                 # Get indices of valid observations
                 bool = bool_list[jj]
                 G = Gref[bool,:]
@@ -350,7 +384,7 @@ class GPS:
             Gref = G.copy()
         N,Npar = Gref.shape
         if zeroMean:
-            for j in xrange(Npar):
+            for j in range(Npar):
                 Gref -= np.mean(Gref[:,j])
 
         # Find indices of valid data for each station and make numpy arrays
@@ -393,7 +427,11 @@ class GPS:
         if solver == 'cvxopt':
             solverClass = sp.BaseOpt
         elif solver == 'tnipm':
-            solverClass = TNIPM
+            try:
+                from tnipm import TNIPM
+                solverClass = TNIPM
+            except ImportError:
+                solverClass = sp.BaseOpt
         else:
             assert False, 'unsupported solver type'
 
@@ -402,7 +440,7 @@ class GPS:
         self.cutoff = cutoff
         norm_tol = 1.0e-4
         pen_old = 0.0
-        for ii in xrange(maxiter):
+        for ii in range(maxiter):
             print(' - at iteration', ii)
 
             # Partition data over several processors for inversions
@@ -416,7 +454,7 @@ class GPS:
                 else:
                     procN = nominal_load
                 # Subset the data
-                ind = xrange(istart, istart+procN)
+                ind = range(istart, istart+procN)
                 subbed = [[bool_list[index] for index in ind], 
                           north[:,ind], east[:,ind], up[:,ind], 
                           w_n[:,ind], w_e[:,ind], w_u[:,ind],
@@ -445,7 +483,7 @@ class GPS:
                 else:
                     procN = nominal_load
                 # Subset the distance weights
-                ind = xrange(istart, istart+procN)
+                ind = range(istart, istart+procN)
                 threads.append(MPWeights(dist_weight[ind,:], shared, penalty, 
                                          penn, pene, penu, istart, wtype=wtype,
                                          combineHorizontal=False))
@@ -480,11 +518,11 @@ class GPS:
         """
         dist_weight = np.zeros((self.nstat, self.nstat))
         # Loop over stations
-        for i in xrange(self.nstat):
+        for i in range(self.nstat):
             ref_X = tu.llh2xyz(self.lat[i]*rad, self.lon[i]*rad, self.elev[i])
             stat_dist = np.zeros((self.nstat,))
             # Loop over other stations
-            for j in xrange(self.nstat):
+            for j in range(self.nstat):
                 if j == i:
                     continue
                 curr_X = tu.llh2xyz(self.lat[j]*rad, self.lon[j]*rad, self.elev[j])

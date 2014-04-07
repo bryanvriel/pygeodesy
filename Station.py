@@ -34,7 +34,7 @@ class STN:
             try:
                 fid = open(fname, 'r')
             except IOError:
-                print 'skipping', fname
+                print('skipping', fname)
                 return None
             line = fid.readline()
             while True:
@@ -55,7 +55,7 @@ class STN:
             try:
                 fid = open(fname, 'r')
             except IOError:
-                print 'skipping', fname
+                print('skipping', fname)
                 return None
             self.tdec, north, east, up = np.loadtxt(fid, unpack=True)
             self.north, self.east, self.up = [dataFactor * val for val in [north, east, up]]

@@ -6,6 +6,7 @@ import operator
 from multiprocessing import Process, Array
 from matutils import dmultl
 import sys
+from functools import reduce
 
 
 class MPInvert(Process):
@@ -43,7 +44,7 @@ class MPInvert(Process):
         arrflag = reduce(operator.mul, arrflag, 1)
 
         # Loop over my portion of GPS stations
-        for jj in xrange(nstat):
+        for jj in range(nstat):
             # Unpack component-wise indices of valid observations
             bool_east, bool_north, bool_up = self.bool_list[jj]
             # Extract valid observations
@@ -117,7 +118,7 @@ class MPWeights(Process):
             assert False, 'unsupported weight type. must be mean or median'
         
         # Loop over my portion of GPS stations
-        for jj in xrange(nstat):
+        for jj in range(nstat):
             # Extract weights
             #plt.semilogy(spenn[ind,:], 'b')
             #plt.semilogy(spene[ind,:], 'r')
@@ -159,7 +160,7 @@ class MPWeights(Process):
 
         # Loop over parameters and find median for each
         wmedians = np.zeros((dataArray.shape[1],))
-        for jj in xrange(dataArray.shape[1]):
+        for jj in range(dataArray.shape[1]):
             # Get the sorting indices
             ind = indsort[:,jj]
             # Sort weights and data
