@@ -3,10 +3,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, ndays=None):
+def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, ndays=None,
+               statlist=None):
     """
     Subsets GPS data based on a window of observation times.
     """
+    # First check if a list of stations to keep is provided
+    statnames = list(inputDict.keys())
+    if statlist is not None:
+        for statname in statnames:
+            if statname.lower() not in statlist:
+                del inputDict[statname]
+    statnames = list(inputDict.keys())
+
     # Boolean array of valid observation times
     tbool = tobs >= t0
     if ndays is None:
@@ -16,9 +25,6 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
         end_ind = beg_ind + ndays
         tbool = np.arange(beg_ind, end_ind, dtype=int)
     print(('Subset time window:', tobs[tbool][0], '->', tobs[tbool][-1]))
-
-    # Get the station names
-    statnames = [key for key in inputDict]
 
     # Subset data
     if not checkOnly:

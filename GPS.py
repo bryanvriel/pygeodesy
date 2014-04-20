@@ -205,15 +205,17 @@ class GPS:
             mDict = {}
             for comp, w_comp in [('east','w_e'), ('north','w_n'), ('up','w_u')]:
 
-                if comp in ['east', 'north']:
-                    G = Gref[:,4:]
-                    cutoff = refCutoff - 4
-                else:
-                    G = Gref
-                    cutoff = refCutoff
+                #if comp in ['east', 'north']:
+                #    G = Gref[:,4:]
+                #    cutoff = refCutoff - 4
+                #else:
+                #    G = Gref
+                #    cutoff = refCutoff
+                cutoff = refCutoff
+                G = Gref
 
                 # Get finite data
-                dat = getattr(stat, comp)
+                dat = (getattr(stat, comp)).copy()
                 ind = np.isfinite(dat)
                 dat = dat[ind]
                 wgt = getattr(stat, w_comp)[ind]
@@ -223,8 +225,8 @@ class GPS:
 
                 # Perform estimation
                 m = solver.invert(dmultl(wgt, G[ind,:]), wgt*dat, penalty)[0]
-                if comp in ['east', 'north']:
-                    m = np.hstack((np.zeros((4,)), m))
+                #if comp in ['east', 'north']:
+                #    m = np.hstack((np.zeros((4,)), m))
                 mDict[comp] = m
             mDicts[statname] = (mDict, G)
 
@@ -625,10 +627,10 @@ class GPS:
             cutoff = cutoffDict[statname]
 
             # Find indices for valid data
-            bool = np.isfinite(stat.north)
-            G = Gref[bool,:].copy()
-            dnorth, deast, dup = stat.north[bool], stat.east[bool], stat.up[bool]
-            wn, we, wu = stat.w_n[bool], stat.w_e[bool], stat.w_u[bool]
+            ind = np.isfinite(stat.north)
+            G = Gref[ind,:].copy()
+            dnorth, deast, dup = stat.north[ind], stat.east[ind], stat.up[ind]
+            wn, we, wu = stat.w_n[ind], stat.w_e[ind], stat.w_u[ind]
 
             # Sparse Cone QP solver
             l1 = sp.BaseOpt(cutoff=cutoff, maxiter=maxiter)
