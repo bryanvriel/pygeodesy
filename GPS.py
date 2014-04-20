@@ -197,13 +197,20 @@ class GPS:
         for statname, stat in self.statDict.items():
 
             # Construct a G matrix
-            G = np.asarray(ts.Timefn(repDict[statname], tdec-tdec[0])[0], order='C')
-            ndat,Npar = G.shape
-            cutoff = cutoffDict[statname]
+            Gref = np.asarray(ts.Timefn(repDict[statname], tdec-tdec[0])[0], order='C')
+            ndat,Npar = Gref.shape
+            refCutoff = cutoffDict[statname]
 
             # Loop over the components
             mDict = {}
             for comp, w_comp in [('east','w_e'), ('north','w_n'), ('up','w_u')]:
+
+                if comp in ['east', 'north']:
+                    G = Gref[:,4:]
+                    cutoff = refCutoff - 4
+                else:
+                    G = Gref
+                    cutoff = refCutoff
 
                 # Get finite data
                 dat = getattr(stat, comp)
@@ -215,7 +222,10 @@ class GPS:
                 solver = sp.BaseOpt(cutoff=cutoff, maxiter=maxiter, weightingMethod='log')
 
                 # Perform estimation
-                mDict[comp] = solver.invert(dmultl(wgt, G[ind,:]), wgt*dat, penalty)[0]
+                m = solver.invert(dmultl(wgt, G[ind,:]), wgt*dat, penalty)[0]
+                if comp in ['east', 'north']:
+                    m = np.hstack((np.zeros((4,)), m))
+                mDict[comp] = m
             mDicts[statname] = (mDict, G)
 
         return mDicts
@@ -375,7 +385,7 @@ class GPS:
         # Pre-compute distances between stations to all other stations and corresponding weights
         print('Pre-computing distance weights between stations')
         rad = np.pi / 180.0
-        dist_weight = self.computeNetworkWeighting(L0=L0)
+        dist_weight = self.computeNetworkWeighting(smooth=smooth, L0=L0)
 
         # Construct a reference G to get the number of parameters if G is not provided
         if G is None:
@@ -512,12 +522,13 @@ class GPS:
         return shared.m_north, shared.m_east, shared.m_up, Gref
 
     
-    def computeNetworkWeighting(self, n_neighbor=3, L0=None):
+    def computeNetworkWeighting(self, smooth=1.0, n_neighbor=3, L0=None):
         """
         Computes the network-dependent spatial weighting.
         """
         dist_weight = np.zeros((self.nstat, self.nstat))
         # Loop over stations
+        rad = np.pi / 180.0
         for i in range(self.nstat):
             ref_X = tu.llh2xyz(self.lat[i]*rad, self.lon[i]*rad, self.elev[i])
             stat_dist = np.zeros((self.nstat,))
@@ -576,18 +587,28 @@ class GPS:
         return 
 
 
-    def xval(self, kfolds, lamvec, rep, cutoff, tdec, maxiter=1, statlist=None):
+    def xval(self, kfolds, lamvec, rep, cutoff, tdec, maxiter=1, statlist=None, plot=False):
         """
         Performs k-fold cross-validation on GPS data
         """
-
-        # First, construct a reference G to get the number of parameters
-        Gref = np.asarray(ts.Timefn(rep, tdec)[0], order='C')
-        N,Npar = Gref.shape
-
         if statlist is None:
             statlist = self.name
 
+        # Make representaton and cutoff dictionaries if not provided
+        if type(rep) is not dict:
+            repDict = {}
+            for statname in statlist:
+                repDict[statname] = rep
+        else:
+            repDict = rep
+
+        if type(cutoff) is not dict:
+            cutoffDict = {}
+            for statname in statlist:
+                cutoffDict[statname] = cutoff
+        else:
+            cutoffDict = cutoff
+        
         if not os.path.exists('figures'):
             os.mkdir('figures')
 
@@ -596,7 +617,12 @@ class GPS:
             stat = self.statDict[statname]
             print(' - cross validating at station', statname)
 
-            #plt.plot(tdec, stat.north, 'o'); plt.title(statname); plt.show(); continue
+            #plt.plot(tdec, stat.north, 'o'); plt.title(statname); plt.show(); assert False
+
+            # Construct dictionary matrix
+            Gref = np.asarray(ts.Timefn(repDict[statname], tdec-tdec[0])[0], order='C')
+            N,Npar = Gref.shape
+            cutoff = cutoffDict[statname]
 
             # Find indices for valid data
             bool = np.isfinite(stat.north)
@@ -612,6 +638,14 @@ class GPS:
             print('    - finished east with optimal penalty of', pen_e)
             pen_u, err_up = l1.xval(kfolds, lamvec, G, dup)
             print('    - finished up with optimal penalty of', pen_u)
+
+            if plot:
+                fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1)
+                ax1.semilogx(lamvec, err_east)
+                ax2.semilogx(lamvec, err_north)
+                ax3.semilogx(lamvec, err_up)
+                fig.savefig('figures/xval_%s.png' % (statname))
+                plt.clf()
 
                 
 class GenericClass:
