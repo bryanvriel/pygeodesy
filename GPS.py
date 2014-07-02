@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
 from .Station import STN
 from .MPClasses import MPInvert, MPWeights, makeSharedArrays
-from mpi4py import MPI
 from scipy.spatial import cKDTree
 from scipy.stats import nanmean
 import SparseConeQP as sp
@@ -433,7 +432,7 @@ class GPS:
         to the same time array in order for the weights to make sense from station
         to station.
         """
-
+        from mpi4py import MPI
         # Make sure I have a valid communicator
         self.comm = communicator or MPI.COMM_WORLD
         # Get the number of processors
