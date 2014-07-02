@@ -455,6 +455,22 @@ class GPS:
         else:
             assert False, 'unsupported weight type. must be mean or median'
 
+        # Specify the solver type
+        if solver == 'cvxopt':
+            solverClass = sp.BaseOpt
+        elif solver == 'tnipm':
+            try:
+                from tnipm import TNIPM
+                solverClass = TNIPM
+            except ImportError:
+                solverClass = sp.BaseOpt
+        else:
+            assert False, 'unsupported solver type'
+
+        # Instantiate a solver
+        objSolver = solverClass(cutoff=cutoff, maxiter=1, eps=1.0e-2,
+                                weightingMethod=weightingMethod)
+
         # If I am the master, do some prep work
         if self.rank == 0:
 
@@ -475,23 +491,6 @@ class GPS:
 
             # Get regular data arrays; row contiguous
             east0, north0, up0, w_east0, w_north0, w_up0 = self.getDataArrays(order='rows')
-            print('Data shape:', east0.shape)
-
-            # Specify the solver type
-            if solver == 'cvxopt':
-                solverClass = sp.BaseOpt
-            elif solver == 'tnipm':
-                try:
-                    from tnipm import TNIPM
-                    solverClass = TNIPM
-                except ImportError:
-                    solverClass = sp.BaseOpt
-            else:
-                assert False, 'unsupported solver type'
-
-            # Instantiate a solver
-            objSolver = solverClass(cutoff=cutoff, maxiter=1, eps=1.0e-2,
-                                    weightingMethod=weightingMethod)
 
             # Allocate arrays to store the final results
             mShape = (self.nstat, Npar)
@@ -503,15 +502,14 @@ class GPS:
             penu0 = np.zeros(mShape)
 
         else:
-            # Workers know nothing about the solver or design matrix
-            objSolver = Gref = None
+            # Workers know nothing about the design matrix
+            Gref = None
             # Nor do they know about the data
             east0 = north0 = up0 = w_east0 = w_north0 = w_up0 = None
             # Nor about the final results
             m_east0 = m_north0 = m_up0 = pene0 = penn0 = penu0 = None
 
-        # Broadcast the solver and design matrix
-        objSolver = self.comm.bcast(objSolver, root=0)
+        # Broadcast the design matrix
         Gref = self.comm.bcast(Gref, root=0)
         Npar = Gref.shape[1]
 
