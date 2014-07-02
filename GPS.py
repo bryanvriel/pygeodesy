@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
 from .Station import STN
 from .MPClasses import MPInvert, MPWeights, makeSharedArrays
+from mpi4py import MPI
 from scipy.spatial import cKDTree
 from scipy.stats import nanmean
 import SparseConeQP as sp
@@ -20,6 +21,8 @@ class GPS:
     """
     Class to hold GPS station data and perform inversions
     """
+    
+    statDict = None
 
     def __init__(self, stnlist, format='sopac', fileKernel='CleanFlt'):
         """
@@ -129,6 +132,37 @@ class GPS:
                 #plt.show()
 
 
+    def getDataArrays(self, order='columns'):
+        """
+        Traverses the station dictionary to construct regular sized arrays for the
+        data and weights.
+        """
+        assert self.statDict is not None, 'must load station dictionary first'
+
+        # Get first station to determine the number of data points
+        for statname, stat in self.statDict.items():
+            ndat = stat.east.size
+            break
+
+        # Construct regular arrays and fill them
+        north = np.empty((ndat, self.nstat))
+        east = np.empty((ndat, self.nstat))
+        up = np.empty((ndat, self.nstat))
+        w_north = np.empty((ndat, self.nstat))
+        w_east = np.empty((ndat, self.nstat))
+        w_up = np.empty((ndat, self.nstat))
+        for statname, cnt in zip(self.name, range(self.nstat)):
+            stat = self.statDict[statname]
+            north[:,cnt], east[:,cnt], up[:,cnt] = stat.north, stat.east, stat.up
+            w_north[:,cnt], w_east[:,cnt], w_up[:,cnt] = stat.w_n, stat.w_e, stat.w_u
+
+        if order == 'rows':
+            return (east.T.copy(), north.T.copy(), up.T.copy(), 
+                    w_east.T.copy(), w_north.T.copy(), w_up.T.copy())
+        else:
+            return east, north, up, w_east, w_north, w_up
+
+
     def resample(self, interp=False, t0=None, tf=None):
         """
         Resample GPS data to a common time array
@@ -187,7 +221,8 @@ class GPS:
                 stn.tdec = stn.tdec[bool]
 
 
-    def extended_spinvert(self, tdec, repDict, penalty, cutoffDict, maxiter=4):
+    def extended_spinvert(self, tdec, repDict, penalty, cutoffDict, maxiter=4,
+                          outlierThresh=1.0e6):
         """
         Performs sparse inversion of model coefficients on each component. Each
         station will have its own time representation and its own cutoff.
@@ -225,6 +260,20 @@ class GPS:
 
                 # Perform estimation
                 m = solver.invert(dmultl(wgt, G[ind,:]), wgt*dat, penalty)[0]
+
+                # Do one pass to remove outliers
+                fit = np.dot(G, m)
+                raw_dat = getattr(stat, comp)
+                misfit = np.abs(raw_dat - fit)
+                ind = misfit > outlierThresh
+                if ind.nonzero()[0].size > 1:
+                    print('Doing another pass to remove outliers')
+                    raw_dat[ind] = np.nan
+                    finiteInd = np.isfinite(raw_dat)
+                    dat = raw_dat[finiteInd]
+                    wgt = getattr(stat, w_comp)[finiteInd]
+                    m = solver.invert(dmultl(wgt, G[finiteInd,:]), wgt*dat, penalty)[0]
+
                 #if comp in ['east', 'north']:
                 #    m = np.hstack((np.zeros((4,)), m))
                 mDict[comp] = m
@@ -375,7 +424,8 @@ class GPS:
 
     def weighted_group_invert(self, tdec, rep, penalty, cutoff, maxiter=1, power=1, L0=None,
                               wtype='mean', weightingMethod='inverse', smooth=1.0,
-                              viewStations=[], nproc=1, zeroMean=False, G=None, solver='cvxopt'):
+                              viewStations=[], zeroMean=False, G=None, solver='cvxopt',
+                              communicator=None, norm_tol=1.0e-4):
         """
         Invert all stations as a group. Perform one iteration, and then compute
         the average penalty vector for all stations. Use this average weight as
@@ -384,144 +434,218 @@ class GPS:
         to station.
         """
 
-        # Pre-compute distances between stations to all other stations and corresponding weights
-        print('Pre-computing distance weights between stations')
-        rad = np.pi / 180.0
-        dist_weight = self.computeNetworkWeighting(smooth=smooth, L0=L0)
+        # Make sure I have a valid communicator
+        self.comm = communicator or MPI.COMM_WORLD
+        # Get the number of processors
+        self.tasks = self.comm.Get_size()
+        # And my rank
+        self.rank = self.comm.Get_rank()
 
-        # Construct a reference G to get the number of parameters if G is not provided
-        if G is None:
-            Gref = np.asarray(ts.Timefn(rep, tdec-tdec[0])[0], order='C')
+        # Determine my workload
+        nominal_load = self.nstat // self.tasks
+        if self.rank == self.tasks - 1:
+            procN = self.nstat - self.rank * nominal_load
         else:
-            Gref = G.copy()
-        N,Npar = Gref.shape
-        if zeroMean:
-            for j in range(Npar):
-                Gref -= np.mean(Gref[:,j])
+            procN = nominal_load
 
-        # Find indices of valid data for each station and make numpy arrays
-        bool_list = []
-        ndat = tdec.size
-        north = np.empty((ndat, self.nstat))
-        east = np.empty((ndat, self.nstat))
-        up = np.empty((ndat, self.nstat))
-        w_n = np.empty((ndat, self.nstat))
-        w_e = np.empty((ndat, self.nstat))
-        w_u = np.empty((ndat, self.nstat))
-        cnt = 0
-        for statname in self.statDict:
-            stat = self.statDict[statname]
-            bool_list.append((np.isfinite(stat.east), 
-                              np.isfinite(stat.north),
-                              np.isfinite(stat.up)))
-            north[:,cnt], east[:,cnt], up[:,cnt] = stat.north, stat.east, stat.up
-            w_n[:,cnt], w_e[:,cnt], w_u[:,cnt] = stat.w_n, stat.w_e, stat.w_u
-            cnt += 1
-         
-        # Make shared memory Arrays with certain shapes
-        shared = GenericClass()
-        pshape = (self.nstat, Npar-cutoff)
-        mshape = (Npar, self.nstat)
-        mpArrays = makeSharedArrays([pshape, pshape, pshape, mshape, mshape, mshape])
-        shared.penn, shared.pene, shared.penu = mpArrays[:3]
-        shared.m_north, shared.m_east, shared.m_up = mpArrays[3:]
-
-        # Make another batch of shared Arrays for weighted penalties
-        penn, pene, penu = makeSharedArrays([pshape, pshape, pshape])
-        if type(penalty) is dict:
-            penn[:] = penalty['north']
-            pene[:] = penalty['east']
-            penu[:] = penalty['up']
+        # Choose my estimator for the weights
+        if 'mean' == wtype:
+            estimator = MPWeights.computeMean
+        elif 'median' == wtype:
+            estimator = MPWeights.computeMedian
         else:
-            penn[:] = penalty; pene[:] = penalty; penu[:] = penalty
+            assert False, 'unsupported weight type. must be mean or median'
 
-        # Specify the solver type
-        if solver == 'cvxopt':
-            solverClass = sp.BaseOpt
-        elif solver == 'tnipm':
-            try:
-                from tnipm import TNIPM
-                solverClass = TNIPM
-            except ImportError:
+        # If I am the master, do some prep work
+        if self.rank == 0:
+
+            # Pre-compute distances between stations to all other stations and 
+            # corresponding weights
+            rad = np.pi / 180.0
+            dist_weight = self.computeNetworkWeighting(smooth=smooth, L0=L0)
+
+            # Construct a reference G to get the number of parameters if G is not provided
+            if G is None:
+                Gref = np.asarray(ts.Timefn(rep, tdec-tdec[0])[0], order='C')
+            else:
+                Gref = G.copy()
+            N,Npar = Gref.shape
+            if zeroMean:
+                for j in range(Npar):
+                    Gref -= np.mean(Gref[:,j])
+
+            # Get regular data arrays; row contiguous
+            east0, north0, up0, w_east0, w_north0, w_up0 = self.getDataArrays(order='rows')
+            print('Data shape:', east0.shape)
+
+            # Specify the solver type
+            if solver == 'cvxopt':
                 solverClass = sp.BaseOpt
+            elif solver == 'tnipm':
+                try:
+                    from tnipm import TNIPM
+                    solverClass = TNIPM
+                except ImportError:
+                    solverClass = sp.BaseOpt
+            else:
+                assert False, 'unsupported solver type'
+
+            # Instantiate a solver
+            objSolver = solverClass(cutoff=cutoff, maxiter=1, eps=1.0e-2,
+                                    weightingMethod=weightingMethod)
+
+            # Allocate arrays to store the final results
+            mShape = (self.nstat, Npar)
+            m_east0 = np.zeros(mShape)
+            m_north0 = np.zeros(mShape)
+            m_up0 = np.zeros(mShape)
+            pene0 = np.zeros(mShape)
+            penn0 = np.zeros(mShape)
+            penu0 = np.zeros(mShape)
+
         else:
-            assert False, 'unsupported solver type'
+            # Workers know nothing about the solver or design matrix
+            objSolver = Gref = None
+            # Nor do they know about the data
+            east0 = north0 = up0 = w_east0 = w_north0 = w_up0 = None
+            # Nor about the final results
+            m_east0 = m_north0 = m_up0 = pene0 = penn0 = penu0 = None
 
-        # Begin iterations
-        print('\nPerforming weighted group inversion')
-        self.cutoff = cutoff
-        norm_tol = 1.0e-4
-        pen_old = 0.0
+        # Broadcast the solver and design matrix
+        objSolver = self.comm.bcast(objSolver, root=0)
+        Gref = self.comm.bcast(Gref, root=0)
+        Npar = Gref.shape[1]
+
+        # Allocate sub arrays to hold my part of the data
+        subShape = (procN, Gref.shape[0])
+        east = np.empty(subShape)
+        north = np.empty(subShape)
+        up = np.empty(subShape)
+        w_east = np.empty(subShape)
+        w_north = np.empty(subShape)
+        w_up = np.empty(subShape)
+
+        # Create row data types for data and parameter chunks
+        dat_rowtype = MPI.DOUBLE.Create_contiguous(Gref.shape[0])
+        dat_rowtype.Commit()
+        par_rowtype = MPI.DOUBLE.Create_contiguous(Gref.shape[1])
+        par_rowtype.Commit()
+
+        # Scatter
+        sendcnts = self.comm.gather(procN, root=0)
+        self.comm.Scatterv([east0,  (sendcnts, None), dat_rowtype], east, root=0)
+        self.comm.Scatterv([north0, (sendcnts, None), dat_rowtype], north, root=0)
+        self.comm.Scatterv([up0,    (sendcnts, None), dat_rowtype], up, root=0)
+        self.comm.Scatterv([w_east0,  (sendcnts, None), dat_rowtype], w_east, root=0)
+        self.comm.Scatterv([w_north0, (sendcnts, None), dat_rowtype], w_north, root=0)
+        self.comm.Scatterv([w_up0,    (sendcnts, None), dat_rowtype], w_up, root=0)
+
+        # Allocate arrays for model coefficients and penalty weights
+        assert type(penalty) is dict, 'this routine only handles dictionary of penalties'
+        mShape = (procN, Npar)
+        m_east = np.zeros(mShape)
+        m_north = np.zeros(mShape)
+        m_up = np.zeros(mShape)
+        pene = penalty['north'] * np.ones(mShape)
+        penn = penalty['east'] * np.ones(mShape)
+        penu = penalty['up'] * np.ones(mShape)
+
+        # Iterate
         for ii in range(maxiter):
-            print(' - at iteration', ii)
 
-            # Partition data over several processors for inversions
-            nominal_load = self.nstat // nproc
-            istart = 0
-            threads = []
-            for id in range(nproc):
-                # Get number of stations to process for this worker
-                if id == nproc - 1:
-                    procN = self.nstat - id * nominal_load
+            if self.rank == 0: print('At iteration', ii)
+
+            # Loop over my portion of GPS stations
+            for jj in range(procN):
+
+                # Get boolean indices of valid observations and weights
+                ind = (np.isfinite(east[jj,:]) * np.isfinite(north[jj,:]) 
+                     * np.isfinite(up[jj,:]) * np.isfinite(w_east[jj,:])
+                     * np.isfinite(w_north[jj,:]) * np.isfinite(w_up[jj,:]))
+                Gsub = Gref[ind,:]
+
+                # Get my penalties
+                eastPen = pene[jj,cutoff:]
+                northPen = penn[jj,cutoff:]
+                upPen = penu[jj,cutoff:]
+
+                # Perform estimation and store weights
+                m_north[jj,:], qn = objSolver.invert(dmultl(w_north[jj,ind],Gsub), 
+                                                     w_north[jj,ind] * north[jj,ind], 
+                                                     northPen)
+                m_east[jj,:], qe = objSolver.invert(dmultl(w_east[jj,ind],Gsub),
+                                                    w_east[jj,ind] * east[jj,ind], 
+                                                    eastPen)
+                m_up[jj,:], qu = objSolver.invert(dmultl(w_up[jj,ind],Gsub),
+                                                  w_up[jj,ind] * up[jj,ind], 
+                                                  upPen)
+    
+                # Now modify the penalty array
+                penn[jj,:] = qn
+                pene[jj,:] = qe
+                penu[jj,:] = qu
+
+            self.comm.Barrier()
+
+            # Master gathers the results for this iteration
+            self.comm.Gatherv(m_east,  [m_east0, (sendcnts, None), par_rowtype], root=0)
+            self.comm.Gatherv(m_north, [m_north0, (sendcnts, None), par_rowtype], root=0)
+            self.comm.Gatherv(m_up,    [m_up0, (sendcnts, None), par_rowtype], root=0)
+            self.comm.Gatherv(pene, [pene0, (sendcnts, None), par_rowtype], root=0)
+            self.comm.Gatherv(penn, [penn0, (sendcnts, None), par_rowtype], root=0)
+            self.comm.Gatherv(penu, [penu0, (sendcnts, None), par_rowtype], root=0)
+
+            # Master computes the weights
+            if self.rank == 0:
+
+                # Temporaries
+                pene_new = np.zeros_like(pene0)
+                penn_new = np.zeros_like(penn0)
+                penu_new = np.zeros_like(penu0)
+    
+                for jj in range(self.nstat):
+                    # Distance weights
+                    weights = np.tile(np.expand_dims(dist_weight[jj,:], axis=1), (1,Npar))
+                    # Compute weighted penalty
+                    penn_new[jj,:] = estimator(weights, penn0, penalty['north'])
+                    pene_new[jj,:] = estimator(weights, pene0, penalty['east'])
+                    penu_new[jj,:] = estimator(weights, penu0, penalty['up'])
+
+                # Check the exit condition
+                wDiff = penn_new - penn0
+                normDiff = np.linalg.norm(wDiff, ord='fro')
+                print(' - normDiff =', normDiff)
+                if normDiff < norm_tol:
+                    exitFlag = True
                 else:
-                    procN = nominal_load
-                # Subset the data
-                ind = range(istart, istart+procN)
-                subbed = [[bool_list[index] for index in ind], 
-                          north[:,ind], east[:,ind], up[:,ind], 
-                          w_n[:,ind], w_e[:,ind], w_u[:,ind],
-                          penn[ind,:], pene[ind,:], penu[ind,:]]
+                    exitFlag = False
 
-                # Initialize solver
-                l1 = solverClass(cutoff=cutoff, maxiter=1, eps=1.0e-2,
-                                 weightingMethod=weightingMethod)
-               
-                # Send to a processor 
-                threads.append(MPInvert(shared, subbed, Gref, l1, istart, cutoff))
-                threads[id].start()
-                istart += procN
+                # Copy from temporaries
+                pene0[:,:] = pene_new
+                penn0[:,:] = penn_new
+                penu0[:,:] = penu_new
 
-            # Wait for everyone to finish
-            for thread in threads:
-                thread.join()
-            
-            # Create a new batch of threads to compute weighted mean/median
-            istart = 0
-            threads = []
-            for id in range(nproc):
-                # Get number of stations to process for this worker
-                if id == nproc - 1:
-                    procN = self.nstat - id * nominal_load
-                else:
-                    procN = nominal_load
-                # Subset the distance weights
-                ind = range(istart, istart+procN)
-                threads.append(MPWeights(dist_weight[ind,:], shared, penalty, 
-                                         penn, pene, penu, istart, wtype=wtype,
-                                         combineHorizontal=False))
-                threads[id].start()
-                istart += procN
+            else:
+                exitFlag = None
 
-            # Wait for everyone to finish
-            for thread in threads:
-                thread.join()
+            # Scatter the updated penalties
+            self.comm.Scatterv([pene0, (sendcnts, None), par_rowtype], pene, root=0)
+            self.comm.Scatterv([penn0, (sendcnts, None), par_rowtype], penn, root=0)
+            self.comm.Scatterv([penu0, (sendcnts, None), par_rowtype], penu, root=0)
 
-            # Make plot of reconstructed time series for silk
-            assert type(viewStations) is list, 'viewStations must be a list of station names'
-            for statname in viewStations:
-                self.viewIteration(statname, shared, pene, penn, Gref, tdec, ii)
-
-            # Check for exit condition
-            pen_curr = penn
-            wDiff = pen_curr - pen_old
-            normDiff = np.linalg.norm(wDiff, ord='fro')
-            print(' - normdiff =', normDiff)
-            if normDiff < norm_tol:
+            # Broadcast the exit flag
+            exitFlag = self.comm.bcast(exitFlag, root=0)
+            if exitFlag:
                 break
-            pen_old = pen_curr.copy()
-            
+
+        dat_rowtype.Free()
+        par_rowtype.Free()
+
         # Done
-        return shared.m_north, shared.m_east, shared.m_up, Gref
+        if self.rank == 0:
+            return m_north0.T, m_east0.T, m_up0.T, Gref
+        else:
+            return None, None, None, None
 
     
     def computeNetworkWeighting(self, smooth=1.0, n_neighbor=3, L0=None):
