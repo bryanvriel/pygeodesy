@@ -1,5 +1,12 @@
 #-*- coding: utf-8 -*-
 
-from .GPS import *
+class GenericClass:
+    pass
+
+from .GPS import GPS
+from .EDM import EDM
+from .TimeRepresentation import TimeRepresentation
+from .MPISolver import MPISolver
+from .SequentialSolver import SequentialSolver
 from . import utilities
 

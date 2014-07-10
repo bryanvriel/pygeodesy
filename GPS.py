@@ -15,86 +15,46 @@ import tsinsar as ts
 #from .sopac import sopac
 import sys, os
 
+from .TimeSeries import TimeSeries
 
-class GPS:
+
+class GPS(TimeSeries):
     """
     Class to hold GPS station data and perform inversions
     """
     
     statDict = None
 
-    def __init__(self, stnlist, format='sopac', fileKernel='CleanFlt'):
+    def __init__(self, name='gps', stnfile=None, datformat=None):
         """
         Initiate GPS structure with station list
         """
+        # Initialize the parent class
+        super().__init__(name=name, stnfile=stnfile, dtype='gps')
 
-        [name,lat,lon,elev] = ts.tsio.textread(stnlist, 'S F F F')
-        self.name = np.array(name)
-        self.lat = np.array(lat)
-        self.lon = np.array(lon)
-        self.elev = np.array(elev)
-        self.nstat = len(self.name)
-        self.format = format
-        self.fileKernel = fileKernel
-        assert format in ['sopac', 'pbo', 'geonetnz'], 'unhandled format'
-
-    def clear(self):
-        """
-        Clears entries for station locations and names.
-        """
-        self.name = []
-        self.lat = []
-        self.lon = []
-        self.elev = []
-        self.nstat = 0
-
-    def loadStationDict(self, inputDict):
-        """
-        Transfers data from a dictionary of station classes to self.
-        """
-        self.clear()
-        for statname, stat in inputDict.items():
-            self.name.append(statname)
-            self.lat.append(stat.lat)
-            self.lon.append(stat.lon)
-            self.elev.append(stat.elev)
-        self.name = np.array(self.name)
-        self.lat,self.lon,self.elev = [np.array(list) for list in [self.lat,self.lon,self.elev]]
-        self.nstat = self.lat.size
-        self.statDict = inputDict
-
+        self.datformat = datformat
         return
 
-
-    def zeroMeanDisplacements(self):
-        """
-        Remove the mean of the finite values in each component.
-        """
-        for statname, stat in self.statDict.items():
-            stat.north -= nanmean(stat.north)
-            stat.east -= nanmean(stat.east)
-            stat.up -= nanmean(stat.up)
-
-        return
-
-
+    
     def read_data(self, gpsdir, dataFactor=1000.0):
         """
         Reads GPS data and convert to mm
         """
+        #raise NotImplementedError('Deprecated read_data method')
         self.stns = []
         for ii in range(self.nstat):
             self.stns.append(STN(self.name[ii], gpsdir, format=self.format,
                                  fileKernel=self.fileKernel, dataFactor=dataFactor))
 
+
     def preprocess(self, hdrformat='filt', dataFactor=1000.0):
         """
         Preprocess the data to remove any known offsets as listed in the 
-        Sopac header file.
+        Sopac header file. Only for Sopac data formats
         """
 
         # Don't do anything if we're not using Sopac
-        if 'sopac' not in self.format:
+        if self.datformat != 'sopac':
             return
 
         if hdrformat == 'filt':
@@ -129,37 +89,6 @@ class GPS:
                 data[ii] -= fit
                 #plt.plot(stn.tdec, data[ii], 'or')
                 #plt.show()
-
-
-    def getDataArrays(self, order='columns'):
-        """
-        Traverses the station dictionary to construct regular sized arrays for the
-        data and weights.
-        """
-        assert self.statDict is not None, 'must load station dictionary first'
-
-        # Get first station to determine the number of data points
-        for statname, stat in self.statDict.items():
-            ndat = stat.east.size
-            break
-
-        # Construct regular arrays and fill them
-        north = np.empty((ndat, self.nstat))
-        east = np.empty((ndat, self.nstat))
-        up = np.empty((ndat, self.nstat))
-        w_north = np.empty((ndat, self.nstat))
-        w_east = np.empty((ndat, self.nstat))
-        w_up = np.empty((ndat, self.nstat))
-        for statname, cnt in zip(self.name, range(self.nstat)):
-            stat = self.statDict[statname]
-            north[:,cnt], east[:,cnt], up[:,cnt] = stat.north, stat.east, stat.up
-            w_north[:,cnt], w_east[:,cnt], w_up[:,cnt] = stat.w_n, stat.w_e, stat.w_u
-
-        if order == 'rows':
-            return (east.T.copy(), north.T.copy(), up.T.copy(), 
-                    w_east.T.copy(), w_north.T.copy(), w_up.T.copy())
-        else:
-            return east, north, up, w_east, w_north, w_up
 
 
     def resample(self, interp=False, t0=None, tf=None):
@@ -644,133 +573,4 @@ class GPS:
         else:
             return None, None, None, None
 
-    
-    def computeNetworkWeighting(self, smooth=1.0, n_neighbor=3, L0=None):
-        """
-        Computes the network-dependent spatial weighting.
-        """
-        dist_weight = np.zeros((self.nstat, self.nstat))
-        # Loop over stations
-        rad = np.pi / 180.0
-        for i in range(self.nstat):
-            ref_X = tu.llh2xyz(self.lat[i]*rad, self.lon[i]*rad, self.elev[i])
-            stat_dist = np.zeros((self.nstat,))
-            # Loop over other stations
-            for j in range(self.nstat):
-                if j == i:
-                    continue
-                curr_X = tu.llh2xyz(self.lat[j]*rad, self.lon[j]*rad, self.elev[j])
-                # Compute distance between stations
-                stat_dist[j] = np.linalg.norm(ref_X - curr_X)
-            if L0 is None:
-                # Mean distance to 3 nearest neighbors multipled by a smoothing factor
-                Lc = smooth * np.mean(np.sort(stat_dist)[1:1+n_neighbor])
-                dist_weight[i,:] = np.exp(-stat_dist / Lc)
-                print(' - scale length at', self.name[i], ':', 0.001 * Lc, 'km')
-            else:
-                dist_weight[i,:] = np.exp(-stat_dist / L0)
-
-        return dist_weight
-
-
-    def viewIteration(self, statname, shared, east_pen, north_pen, G, tdec, itcnt):
-
-        fig = plt.figure(figsize=(16,8))
-        ax1 = fig.add_subplot(221)
-        ax2 = fig.add_subplot(222)
-        ax3 = fig.add_subplot(223)
-        ax4 = fig.add_subplot(224)
-        axes_pairs = [(ax1, ax3), (ax2, ax4)]
-
-        # Compute current transient signal
-        statind = (self.name == statname).nonzero()[0]
-        cnt = 0
-        for component, penarray in [('east', east_pen), ('north', north_pen)]:
-
-            m = getattr(shared, 'm_' + component)[:,statind].squeeze()
-            pen = penarray[statind,:].squeeze()
-            npar = pen.size
-            fitc = np.dot(G[:,:self.cutoff], m[:self.cutoff])
-            fitt = np.dot(G[:,self.cutoff:], m[self.cutoff:])
-            dat = getattr(self.statDict[statname], component)
-
-            ax_top, ax_bottom = axes_pairs[cnt]
-            
-            ax_top.plot(tdec, dat - fitc, 'o', alpha=0.6)
-            ax_top.plot(tdec, fitt, '-r', linewidth=3)
-            ax_top.set_xlim([tdec[0], tdec[-1]])
-            ax_bottom.plot(np.arange(npar), pen)
-            ax_bottom.set_xlim([0, npar])
-            cnt += 1
-
-        plt.suptitle(statname, y=0.94, fontsize=18)
-        #plt.show(); assert False
-        fig.savefig('figures/%s_iterations_%03d.png' % (statname, itcnt), bbox_inches='tight')
-        plt.close(fig)
-        return 
-
-
-    def xval(self, kfolds, lamvec, rep, cutoff, tdec, maxiter=1, statlist=None, plot=False):
-        """
-        Performs k-fold cross-validation on GPS data
-        """
-        if statlist is None:
-            statlist = self.name
-
-        # Make representaton and cutoff dictionaries if not provided
-        if type(rep) is not dict:
-            repDict = {}
-            for statname in statlist:
-                repDict[statname] = rep
-        else:
-            repDict = rep
-
-        if type(cutoff) is not dict:
-            cutoffDict = {}
-            for statname in statlist:
-                cutoffDict[statname] = cutoff
-        else:
-            cutoffDict = cutoff
-        
-        if not os.path.exists('figures'):
-            os.mkdir('figures')
-
-        for statname in statlist:
-            
-            stat = self.statDict[statname]
-            print(' - cross validating at station', statname)
-
-            #plt.plot(tdec, stat.north, 'o'); plt.title(statname); plt.show(); assert False
-
-            # Construct dictionary matrix
-            Gref = np.asarray(ts.Timefn(repDict[statname], tdec-tdec[0])[0], order='C')
-            N,Npar = Gref.shape
-            cutoff = cutoffDict[statname]
-
-            # Find indices for valid data
-            ind = np.isfinite(stat.north)
-            G = Gref[ind,:].copy()
-            dnorth, deast, dup = stat.north[ind], stat.east[ind], stat.up[ind]
-            wn, we, wu = stat.w_n[ind], stat.w_e[ind], stat.w_u[ind]
-
-            # Sparse Cone QP solver
-            l1 = sp.BaseOpt(cutoff=cutoff, maxiter=maxiter)
-            pen_n, err_north = l1.xval(kfolds, lamvec, dmultl(wn, G), wn*dnorth)
-            print('    - finished north with optimal penalty of', pen_n)
-            pen_e, err_east = l1.xval(kfolds, lamvec, dmultl(we, G), we*deast)
-            print('    - finished east with optimal penalty of', pen_e)
-            pen_u, err_up = l1.xval(kfolds, lamvec, G, dup)
-            print('    - finished up with optimal penalty of', pen_u)
-
-            if plot:
-                fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1)
-                ax1.semilogx(lamvec, err_east)
-                ax2.semilogx(lamvec, err_north)
-                ax3.semilogx(lamvec, err_up)
-                fig.savefig('figures/xval_%s.png' % (statname))
-                plt.clf()
-
-                
-class GenericClass:
-    pass
 
