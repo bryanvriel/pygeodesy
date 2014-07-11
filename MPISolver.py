@@ -165,16 +165,19 @@ class MPISolver(Solver):
         # Temporary
         λ_new = np.zeros_like(self.λ0)
     
-        # Loop over all stations and components
-        N = self.nstat * self.ncomp
-        for jj in range(N):
-            # Distance weights
-            weights = np.tile(np.expand_dims(self.dist_weight[jj,:], axis=1), (1,self.npar))
-            # Compute distance-weighted penalty
-            λ_new[jj,:] = estimator(weights, self.λ0, self.penalties0[jj])
+        # Loop over components
+        for kk in range(self.ncomp):
+            # Get current penalty arrays and scalar penalties for this component
+            λ_comp = self.λ0[kk*self.nstat:kk*self.nstat+self.nstat,:]
+            pen_comp = self.penalties0[kk*self.nstat:kk*self.nstat+self.nstat]
+            # Loop over stations
+            for jj in range(self.nstat):
+                # Distance weights
+                weights = np.tile(np.expand_dims(self.dist_weight[jj,:], axis=1), (1,self.npar))
+                λ_new[kk*self.nstat+jj,:] = estimator(weights, λ_comp, pen_comp[jj])
 
         # Check the exit condition
-        λ_diff = λ_new - self.λ0
+        λ_diff = λ_new[:,self.cutoff:] - self.λ0[:,self.cutoff:]
         normDiff = np.linalg.norm(λ_diff, ord='fro')
         print(' - normDiff =', normDiff)
         if normDiff < norm_tol:

@@ -9,7 +9,7 @@ class TimeRepresentation:
     Class for parameterizing temporal evolution functions.
     """
 
-    def __init__(self, t, rep=None, cutoff=0):
+    def __init__(self, t, rep=None, cutoff=0, G=None):
 
         self.t = t
         self.rep = rep
@@ -20,6 +20,11 @@ class TimeRepresentation:
 
         if self.rep is not None:
             self._rep2matrix()
+
+        # If a matrix is provided, go ahead and store to _matrix
+        if G is not None:
+            self._matrix = G
+            self.npar = G.shape[1]
 
         return
 

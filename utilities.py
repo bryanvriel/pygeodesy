@@ -40,12 +40,9 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
             if checkOnly:
                 continue
             else:
-                stat.east = stat.east[tbool]
-                stat.north = stat.north[tbool]
-                stat.up = stat.up[tbool]
-                stat.w_n = stat.w_n[tbool]
-                stat.w_e = stat.w_e[tbool]
-                stat.w_u = stat.w_u[tbool]
+                for attr in ('east', 'north', 'up', 'w_east', 'w_north', 'w_up'):
+                    dat = getattr(stat, attr)
+                    setattr(stat, attr, dat[tbool])
                 nvalidsss.append(indValid.size)
 
     #plt.plot(nvalidsss, 'o'); plt.show(); assert False

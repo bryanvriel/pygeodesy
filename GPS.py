@@ -1,18 +1,13 @@
-
+#-*- coding: utf-8 -*-
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FormatStrFormatter
 from .Station import STN
-from .MPClasses import MPInvert, MPWeights, makeSharedArrays
 from scipy.spatial import cKDTree
-from scipy.stats import nanmean
 import SparseConeQP as sp
-#from tnipm import TNIPM
-import topoutil as tu
 from matutils import dmultl, dmultr
+from timeutils import generateRegularTimeArray
 import tsinsar as ts
-#from .sopac import sopac
 import sys, os
 
 from .TimeSeries import TimeSeries
@@ -36,15 +31,16 @@ class GPS(TimeSeries):
         return
 
     
-    def read_data(self, gpsdir, dataFactor=1000.0):
+    def read_data(self, gpsdir, fileKernel='CleanFlt', dataFactor=1000.0):
         """
         Reads GPS data and convert to mm
         """
         #raise NotImplementedError('Deprecated read_data method')
         self.stns = []
         for ii in range(self.nstat):
-            self.stns.append(STN(self.name[ii], gpsdir, format=self.format,
-                                 fileKernel=self.fileKernel, dataFactor=dataFactor))
+            self.stns.append(STN(self.name[ii], gpsdir, format=self.datformat,
+                                 fileKernel=fileKernel, dataFactor=dataFactor))
+        return
 
 
     def preprocess(self, hdrformat='filt', dataFactor=1000.0):
@@ -107,12 +103,13 @@ class GPS(TimeSeries):
             if tmax_cur < tmax:
                 tmax = tmax_cur
 
-        tcommon = np.linspace(tmin, tmax, int((tmax-tmin)*365.0))
+        tcommon = generateRegularTimeArray(tmin, tmax)
+        days = tcommon.size
         refflag = False
         if t0 is not None and tf is not None:
             refflag = True
-            days = int((tf - t0) * 365.0)
-            tref = np.linspace(t0, tf, days)
+            tref = generateRegularTimeArray(t0, tf)
+            days = tref.size
             tree = cKDTree(tref.reshape((days,1)), leafsize=2*days)
 
         # Retrieve data that lies within the common window
@@ -209,368 +206,4 @@ class GPS(TimeSeries):
 
         return mDicts
 
-
-    def spinvert(self, tdec, rep, penalty, cutoff, maxiter=4, nproc=1):
-        """
-        Performs sparse inversion of model coefficients on each component
-        """
-
-        # Construct a reference G to get the number of parameters
-        Gref = np.asarray(ts.Timefn(rep, tdec-tdec[0])[0], order='C')
-        ndat,Npar = Gref.shape
-       
-        # Find indices of valid data for each station 
-        boolList = []
-        north = np.empty((ndat, self.nstat))
-        east = np.empty((ndat, self.nstat))
-        up = np.empty((ndat, self.nstat))
-        w_n = np.empty((ndat, self.nstat))
-        w_e = np.empty((ndat, self.nstat))
-        w_u = np.empty((ndat, self.nstat))
-        cnt = 0
-        for statname in self.statDict:
-            stat = self.statDict[statname]
-            boolList.append((np.isfinite(stat.east), 
-                             np.isfinite(stat.north),
-                             np.isfinite(stat.up)))
-            north[:,cnt], east[:,cnt], up[:,cnt] = stat.north, stat.east, stat.up
-            w_n[:,cnt], w_e[:,cnt], w_u[:,cnt] = stat.w_n, stat.w_e, stat.w_u
-            cnt += 1
-         
-        # Make shared memory Arrays with certain shapes
-        shared = GenericClass()
-        pshape = (self.nstat, Npar-cutoff)
-        mshape = (Npar, self.nstat)
-        mpArrays = makeSharedArrays([pshape, pshape, pshape, mshape, mshape, mshape])
-        shared.penn, shared.pene, shared.penu = mpArrays[:3]
-        shared.m_north, shared.m_east, shared.m_up = mpArrays[3:]
-
-        # Assign uniform penalty for all components
-        penn, pene, penu = penalty, penalty, penalty
-
-        # Partition data over several processors for inversions
-        nominal_load = self.nstat // nproc
-        istart = 0
-        threads = []
-        for id in range(nproc):
-            # Get number of stations to process for this worker
-            if id == nproc - 1:
-                procN = self.nstat - id * nominal_load
-            else:
-                procN = nominal_load
-            # Subset the data
-            ind = range(istart, istart+procN)
-            subbed = [[boolList[index] for index in ind], 
-                      north[:,ind], east[:,ind], up[:,ind], 
-                      w_n[:,ind], w_e[:,ind], w_u[:,ind],
-                      penn, pene, penu]
-
-            # Initialize solver
-            l1 = sp.BaseOpt(cutoff=cutoff, maxiter=maxiter, weightingMethod='log')
-           
-            # Send to a processor 
-            threads.append(MPInvert(shared, subbed, Gref, l1, istart, cutoff))
-            threads[id].start()
-            istart += procN
-
-        # Wait for everyone to finish
-        for thread in threads:
-            thread.join()
-
-        return shared.m_north, shared.m_east, shared.m_up, Gref
-
-
-    def group_invert(self, tdec, north, east, up, w_n, w_e, w_u, rep, penalty, cutoff, maxiter=4):
-        """
-        Invert all stations as a group. Perform one iteration, and then compute
-        the average penalty vector for all stations. Use this average weight as
-        an input for the next iteration. Note that all stations must be sampled
-        to the same time array in order for the weights to make sense from station
-        to station.
-        """
-
-        # First, construct a reference G to get the number of parameters
-        Gref = np.asarray(ts.Timefn(rep, tdec-tdec[0])[0], order='C')
-        N,Npar = Gref.shape
-
-        # Initial penalty arrays
-        penn = penalty * np.ones((Npar-cutoff,), dtype=float)
-        pene = penalty * np.ones((Npar-cutoff,), dtype=float)
-        penu = penalty * np.ones((Npar-cutoff,), dtype=float)
-
-        # Find indices of valid data for each station
-        bool_list = []
-        for i in range(self.nstat):
-            bool_list.append(np.isfinite(north[:,i]))
-        
-        # Initialize solver
-        l1 = sp.BaseOpt(cutoff=cutoff, maxiter=1, weightingMethod='log')
-
-        # Begin iterations
-        print('\nPerforming group inversion')
-        m_north = np.zeros((Npar,self.nstat))
-        m_east = np.zeros((Npar,self.nstat))
-        m_up = np.zeros((Npar,self.nstat))
-        pen_old = np.zeros((Npar-cutoff,))
-        factor = 1
-        for ii in range(maxiter):
-            print(' - at iteration', ii)
-            #allpen = 0.0
-            allpen = np.zeros((self.nstat, Npar-cutoff))
-            for jj in range(self.nstat):
-                # Get indices of valid observations
-                bool = bool_list[jj]
-                G = Gref[bool,:]
-                dnorth, deast, dup = north[bool,jj], east[bool,jj], up[bool,jj]
-                wn, we, wu = w_n[bool,jj], w_e[bool,jj], w_u[bool,jj]
-                # Perform estimation and store weights
-                m_north[:,jj], qn = l1.invert(dmultl(wn, G), wn*dnorth, penn)
-                m_east[:,jj], qe  = l1.invert(dmultl(we, G), we*deast, pene)
-                m_up[:,jj], qu    = l1.invert(dmultl(wu, G), wu*dup, penu)
-                #allpen += qn[cutoff:] + qe[cutoff:] 
-                allpen[jj,:] = qn[cutoff:] + qe[cutoff:]
-
-            # Compute average weight
-            #avgpen = allpen / (2.0 * self.nstat)
-            avgpen = np.median(allpen, axis=0)
-            penn = penalty * avgpen
-            pene = penalty * avgpen
-            penu = penalty * avgpen
-
-            pdiff = avgpen - pen_old
-            print(' - weight difference:', np.std(pdiff))
-            pen_old = avgpen.copy()
-
-            plt.semilogy(factor*pene, label='%d'%ii)
-            factor *= 10.0
-
-        plt.legend()
-        plt.show()
-
-        return m_north, m_east, m_up, Gref
-
-
-    def weighted_group_invert(self, tdec, rep, penalty, cutoff, maxiter=1, power=1, L0=None,
-                              wtype='mean', weightingMethod='inverse', smooth=1.0,
-                              viewStations=[], zeroMean=False, G=None, solver='cvxopt',
-                              communicator=None, norm_tol=1.0e-4):
-        """
-        Invert all stations as a group. Perform one iteration, and then compute
-        the average penalty vector for all stations. Use this average weight as
-        an input for the next iteration. Note that all stations must be sampled
-        to the same time array in order for the weights to make sense from station
-        to station.
-        """
-        from mpi4py import MPI
-        # Make sure I have a valid communicator
-        self.comm = communicator or MPI.COMM_WORLD
-        # Get the number of processors
-        self.tasks = self.comm.Get_size()
-        # And my rank
-        self.rank = self.comm.Get_rank()
-
-        # Determine my workload
-        nominal_load = self.nstat // self.tasks
-        if self.rank == self.tasks - 1:
-            procN = self.nstat - self.rank * nominal_load
-        else:
-            procN = nominal_load
-
-        # Choose my estimator for the weights
-        if 'mean' == wtype:
-            estimator = MPWeights.computeMean
-        elif 'median' == wtype:
-            estimator = MPWeights.computeMedian
-        else:
-            assert False, 'unsupported weight type. must be mean or median'
-
-        # Specify the solver type
-        if solver == 'cvxopt':
-            solverClass = sp.BaseOpt
-        elif solver == 'tnipm':
-            try:
-                from tnipm import TNIPM
-                solverClass = TNIPM
-            except ImportError:
-                solverClass = sp.BaseOpt
-        else:
-            assert False, 'unsupported solver type'
-
-        # Instantiate a solver
-        objSolver = solverClass(cutoff=cutoff, maxiter=1, eps=1.0e-2,
-                                weightingMethod=weightingMethod)
-
-        # If I am the master, do some prep work
-        if self.rank == 0:
-
-            # Pre-compute distances between stations to all other stations and 
-            # corresponding weights
-            rad = np.pi / 180.0
-            dist_weight = self.computeNetworkWeighting(smooth=smooth, L0=L0)
-
-            # Construct a reference G to get the number of parameters if G is not provided
-            if G is None:
-                Gref = np.asarray(ts.Timefn(rep, tdec-tdec[0])[0], order='C')
-            else:
-                Gref = G.copy()
-            N,Npar = Gref.shape
-            if zeroMean:
-                for j in range(Npar):
-                    Gref -= np.mean(Gref[:,j])
-
-            # Get regular data arrays; row contiguous
-            east0, north0, up0, w_east0, w_north0, w_up0 = self.getDataArrays(order='rows')
-
-            # Allocate arrays to store the final results
-            mShape = (self.nstat, Npar)
-            m_east0 = np.zeros(mShape)
-            m_north0 = np.zeros(mShape)
-            m_up0 = np.zeros(mShape)
-            pene0 = np.zeros(mShape)
-            penn0 = np.zeros(mShape)
-            penu0 = np.zeros(mShape)
-
-        else:
-            # Workers know nothing about the design matrix
-            Gref = None
-            # Nor do they know about the data
-            east0 = north0 = up0 = w_east0 = w_north0 = w_up0 = None
-            # Nor about the final results
-            m_east0 = m_north0 = m_up0 = pene0 = penn0 = penu0 = None
-
-        # Broadcast the design matrix
-        Gref = self.comm.bcast(Gref, root=0)
-        Npar = Gref.shape[1]
-
-        # Allocate sub arrays to hold my part of the data
-        subShape = (procN, Gref.shape[0])
-        east = np.empty(subShape)
-        north = np.empty(subShape)
-        up = np.empty(subShape)
-        w_east = np.empty(subShape)
-        w_north = np.empty(subShape)
-        w_up = np.empty(subShape)
-
-        # Create row data types for data and parameter chunks
-        dat_rowtype = MPI.DOUBLE.Create_contiguous(Gref.shape[0])
-        dat_rowtype.Commit()
-        par_rowtype = MPI.DOUBLE.Create_contiguous(Gref.shape[1])
-        par_rowtype.Commit()
-
-        # Scatter
-        sendcnts = self.comm.gather(procN, root=0)
-        self.comm.Scatterv([east0,  (sendcnts, None), dat_rowtype], east, root=0)
-        self.comm.Scatterv([north0, (sendcnts, None), dat_rowtype], north, root=0)
-        self.comm.Scatterv([up0,    (sendcnts, None), dat_rowtype], up, root=0)
-        self.comm.Scatterv([w_east0,  (sendcnts, None), dat_rowtype], w_east, root=0)
-        self.comm.Scatterv([w_north0, (sendcnts, None), dat_rowtype], w_north, root=0)
-        self.comm.Scatterv([w_up0,    (sendcnts, None), dat_rowtype], w_up, root=0)
-
-        # Allocate arrays for model coefficients and penalty weights
-        assert type(penalty) is dict, 'this routine only handles dictionary of penalties'
-        mShape = (procN, Npar)
-        m_east = np.zeros(mShape)
-        m_north = np.zeros(mShape)
-        m_up = np.zeros(mShape)
-        pene = penalty['north'] * np.ones(mShape)
-        penn = penalty['east'] * np.ones(mShape)
-        penu = penalty['up'] * np.ones(mShape)
-
-        # Iterate
-        for ii in range(maxiter):
-
-            if self.rank == 0: print('At iteration', ii)
-
-            # Loop over my portion of GPS stations
-            for jj in range(procN):
-
-                # Get boolean indices of valid observations and weights
-                ind = (np.isfinite(east[jj,:]) * np.isfinite(north[jj,:]) 
-                     * np.isfinite(up[jj,:]) * np.isfinite(w_east[jj,:])
-                     * np.isfinite(w_north[jj,:]) * np.isfinite(w_up[jj,:]))
-                Gsub = Gref[ind,:]
-
-                # Get my penalties
-                eastPen = pene[jj,cutoff:]
-                northPen = penn[jj,cutoff:]
-                upPen = penu[jj,cutoff:]
-
-                # Perform estimation and store weights
-                m_north[jj,:], qn = objSolver.invert(dmultl(w_north[jj,ind],Gsub), 
-                                                     w_north[jj,ind] * north[jj,ind], 
-                                                     northPen)
-                m_east[jj,:], qe = objSolver.invert(dmultl(w_east[jj,ind],Gsub),
-                                                    w_east[jj,ind] * east[jj,ind], 
-                                                    eastPen)
-                m_up[jj,:], qu = objSolver.invert(dmultl(w_up[jj,ind],Gsub),
-                                                  w_up[jj,ind] * up[jj,ind], 
-                                                  upPen)
-    
-                # Now modify the penalty array
-                penn[jj,:] = qn
-                pene[jj,:] = qe
-                penu[jj,:] = qu
-
-            self.comm.Barrier()
-
-            # Master gathers the results for this iteration
-            self.comm.Gatherv(m_east,  [m_east0, (sendcnts, None), par_rowtype], root=0)
-            self.comm.Gatherv(m_north, [m_north0, (sendcnts, None), par_rowtype], root=0)
-            self.comm.Gatherv(m_up,    [m_up0, (sendcnts, None), par_rowtype], root=0)
-            self.comm.Gatherv(pene, [pene0, (sendcnts, None), par_rowtype], root=0)
-            self.comm.Gatherv(penn, [penn0, (sendcnts, None), par_rowtype], root=0)
-            self.comm.Gatherv(penu, [penu0, (sendcnts, None), par_rowtype], root=0)
-
-            # Master computes the weights
-            if self.rank == 0:
-
-                # Temporaries
-                pene_new = np.zeros_like(pene0)
-                penn_new = np.zeros_like(penn0)
-                penu_new = np.zeros_like(penu0)
-    
-                for jj in range(self.nstat):
-                    # Distance weights
-                    weights = np.tile(np.expand_dims(dist_weight[jj,:], axis=1), (1,Npar))
-                    # Compute weighted penalty
-                    penn_new[jj,:] = estimator(weights, penn0, penalty['north'])
-                    pene_new[jj,:] = estimator(weights, pene0, penalty['east'])
-                    penu_new[jj,:] = estimator(weights, penu0, penalty['up'])
-
-                # Check the exit condition
-                wDiff = penn_new - penn0
-                normDiff = np.linalg.norm(wDiff, ord='fro')
-                print(' - normDiff =', normDiff)
-                if normDiff < norm_tol:
-                    exitFlag = True
-                else:
-                    exitFlag = False
-
-                # Copy from temporaries
-                pene0[:,:] = pene_new
-                penn0[:,:] = penn_new
-                penu0[:,:] = penu_new
-
-            else:
-                exitFlag = None
-
-            # Scatter the updated penalties
-            self.comm.Scatterv([pene0, (sendcnts, None), par_rowtype], pene, root=0)
-            self.comm.Scatterv([penn0, (sendcnts, None), par_rowtype], penn, root=0)
-            self.comm.Scatterv([penu0, (sendcnts, None), par_rowtype], penu, root=0)
-
-            # Broadcast the exit flag
-            exitFlag = self.comm.bcast(exitFlag, root=0)
-            if exitFlag:
-                break
-
-        dat_rowtype.Free()
-        par_rowtype.Free()
-
-        # Done
-        if self.rank == 0:
-            return m_north0.T, m_east0.T, m_up0.T, Gref
-        else:
-            return None, None, None, None
-
-
+# end of file
