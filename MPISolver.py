@@ -3,7 +3,6 @@
 import numpy as np
 import tsinsar as ts
 from .Solver import Solver
-from mpi4py import MPI
 from .MPClasses import MPWeights
 
 dmultl = ts.dmultl
@@ -19,6 +18,7 @@ class MPISolver(Solver):
         Initialize the parent Solver class and get my MPI properties.
         """
         super().__init__(data, timeRep, solver)
+        from mpi4py import MPI
         self.comm = communicator or MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.tasks = self.comm.Get_size()
@@ -59,6 +59,7 @@ class MPISolver(Solver):
         """
         Scatter the data among the workers.
         """
+        from mpi4py import MPI
         N = self.nstat * self.ncomp
         nominal_load = N // self.tasks
         if self.rank == self.tasks - 1:
