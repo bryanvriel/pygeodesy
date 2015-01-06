@@ -43,6 +43,11 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
                 for attr in ('east', 'north', 'up', 'w_east', 'w_north', 'w_up'):
                     dat = getattr(stat, attr)
                     setattr(stat, attr, dat[tbool])
+                    try:
+                        filtdat = getattr(stat, 'filt_' + attr)
+                        setattr(stat, 'filt_' + attr, filtdat[tbool])
+                    except AttributeError:
+                        pass
                 nvalidsss.append(indValid.size)
 
     #plt.plot(nvalidsss, 'o'); plt.show(); assert False
