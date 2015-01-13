@@ -82,6 +82,17 @@ class STN:
             self.tdec = data[:,0]
             self.north, self.east, self.up = data[:,1], data[:,2], data[:,3]
             self.sn, self.se, self.su = data[:,4], data[:,5], data[:,6]
+
+        elif 'gam' in format:
+            fname = '%s/%s.gam' % (gpsdir, stname)
+            try:
+                t,e,n,se,sn,u,su = np.loadtxt(fname, usecols=(0,1,2,3,4,6,7), unpack=True)
+            except IOError:
+                print('skipping', fname)
+                return
+            self.tdec = t
+            self.north, self.east, self.up = n, e, u
+            self.sn, self.se, self.su = sn, se, su
                         
         else:
             assert txtreader is not None, 'No reader specified for GPS data'
