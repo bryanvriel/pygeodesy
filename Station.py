@@ -84,12 +84,16 @@ class STN:
             self.sn, self.se, self.su = data[:,4], data[:,5], data[:,6]
 
         elif 'gam' in format:
-            fname = '%s/%s.gam' % (gpsdir, stname)
             try:
+                fname = '%s/%s.gam' % (gpsdir, stname)
                 t,e,n,se,sn,u,su = np.loadtxt(fname, usecols=(0,1,2,3,4,6,7), unpack=True)
             except IOError:
-                print('skipping', fname)
-                return
+                try:
+                    fname = '%s/%s' % (gpsdir, stname)
+                    t,e,n,se,sn,u,su = np.loadtxt(fname, usecols=(0,1,2,3,4,6,7), unpack=True)
+                except IOError:
+                    print('skipping', fname)
+                    return
             self.tdec = t
             self.north, self.east, self.up = n, e, u
             self.sn, self.se, self.su = sn, se, su

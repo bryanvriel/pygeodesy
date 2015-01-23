@@ -1,6 +1,31 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.path import Path
+
+
+def subsetDataWithPoly(inputDict, points):
+    """
+    Subset GPS stations within a polynomial.
+    """
+
+    # Make a path out of the polynomial points
+    poly = Path(points)
+
+    # Figure out which stations lie inside the polygon
+    keepstat = []
+    for statname, stat in inputDict.items():
+        test = poly.contains_points(np.array([[stat.lon, stat.lat]]))
+        if poly.contains_points(np.array([[stat.lon, stat.lat]]))[0]:
+            keepstat.append(statname)
+
+    # Remove the ones that don't
+    statnames = list(inputDict.keys())
+    for statname in statnames:
+        if statname.lower() not in keepstat:
+            del inputDict[statname]
+
+    return
 
 
 def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, ndays=None,
