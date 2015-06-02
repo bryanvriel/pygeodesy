@@ -24,7 +24,7 @@ class Solver:
         self.cutoff = self.timeRep.cutoff
 
         # Store the problem sizes
-        self.ndat = self.Gss.shape[0]
+        self.ndat = self.G.shape[0]
         self.nstat = self.data.nstat
         self.npar = timeRep.npar
 
