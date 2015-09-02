@@ -223,7 +223,7 @@ class TimeSeries:
         return
 
 
-    def PCA(self, n_comp=1, plot=False):
+    def decompose(self, n_comp=1, plot=False, method='pca'):
         """
         Peform principal component analysis on a stack of time series.
         """
