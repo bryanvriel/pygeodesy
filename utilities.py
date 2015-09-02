@@ -15,6 +15,8 @@ def subsetDataWithPoly(inputDict, points):
     # Figure out which stations lie inside the polygon
     keepstat = []
     for statname, stat in inputDict.items():
+        if statname == 'tdec':
+            continue
         test = poly.contains_points(np.array([[stat.lon, stat.lat]]))
         if poly.contains_points(np.array([[stat.lon, stat.lat]]))[0]:
             keepstat.append(statname)
@@ -65,8 +67,11 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
             if checkOnly:
                 continue
             else:
-                for attr in ('east', 'north', 'up', 'w_east', 'w_north', 'w_up'):
+                for attr in ('east', 'north', 'up', 'w_east', 'w_north', 'w_up', 'status'):
+                    if not hasattr(stat, attr):
+                        continue
                     dat = getattr(stat, attr)
+                    print(dat.shape, attr)
                     setattr(stat, attr, dat[tbool])
                     try:
                         filtdat = getattr(stat, 'filt_' + attr)

@@ -155,7 +155,7 @@ class GPS(TimeSeries):
         """
         # Loop over the stations
         mDicts = {}
-        for statname, stat in self.statDict.items():
+        for statname, stat in self.statGen:
 
             # Construct a G matrix
             Gref = np.asarray(ts.Timefn(repDict[statname], tdec-tdec[0])[0], order='C')

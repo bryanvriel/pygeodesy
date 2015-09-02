@@ -1,8 +1,11 @@
 #-*- coding: utf-8 -*-
 
 import numpy as np
+from scipy.stats import nanmedian
 import tsinsar as ts
+import shutil
 import h5py
+
 
 
 class TimeSeries:
@@ -38,6 +41,18 @@ class TimeSeries:
             assert False, 'Unsupported data type. Must be gps, edm, or insar'
         self.ncomp = len(self.components)
 
+        self.h5file = None
+
+        return
+
+
+    def __del__(self):
+        """
+        Make sure to close any H5 file.
+        """
+        if self.h5file is not None:
+            print('Finished processing. Closing H5 file')
+            self.h5file.close()
         return
 
 
@@ -65,7 +80,42 @@ class TimeSeries:
         self.lat,self.lon,self.elev = [np.array(lst) for lst in [self.lat,self.lon,self.elev]]
         self.nstat = self.lat.size
         self.statDict = inputDict
+        self.statGen = ((statname, stat) for (statname, stat) in self.statDict.items()
+                         if statname != 'tdec')
 
+        return
+
+
+    def loadStationH5(self, h5file, fileout=None):
+        """
+        Transfers data from an h5py data stack to self.
+        """
+        self.clear()
+
+        # If user specifies an output file, we copy the input file and open
+        # the output in read/write mode
+        if fileout is None:
+            self.h5file = h5py.File(h5file, 'r')
+        else:
+            shutil.copyfile(h5file, fileout)
+            self.h5file = h5py.File(fileout, 'r+')
+        self.statDict = self.h5file
+
+        # Make a generator to loop over station data
+        self.statGen = list((statname, stat) for (statname, stat) in self.h5file.items()
+                             if statname != 'tdec')
+
+        # Get the data
+        for statname, stat in self.statGen:
+            self.name.append(statname.lower())
+            self.lat.append(stat['lat'].value)
+            self.lon.append(stat['lon'].value)
+            self.elev.append(stat['elev'].value)
+        self.name = np.array(self.name)
+        self.lat,self.lon,self.elev = [np.array(lst) for lst in [self.lat,self.lon,self.elev]]
+        self.nstat = self.lat.size
+        self.tdec = self.h5file['tdec'].value
+        
         return
 
 
@@ -74,7 +124,7 @@ class TimeSeries:
         Remove the mean of the finite values in each component of displacement.
         """
         from scipy.stats import nanmean
-        for statname, stat in self.statDict.items():
+        for statname, stat in self.statGen:
             for component in self.components:
                 dat = getattr(self, component)
                 dat -= nanmean(dat)
@@ -89,7 +139,7 @@ class TimeSeries:
         assert self.statDict is not None, 'must load station dictionary first'
 
         # Get first station to determine the number of data points
-        for statname, stat in self.statDict.items():
+        for statname, stat in self.statGen:
             dat = getattr(stat, self.components[0])
             ndat = dat.size
             break 
@@ -141,6 +191,118 @@ class TimeSeries:
                 dist_weight[i,:] = np.exp(-stat_dist / L0)
 
         return dist_weight
+
+
+    def filterData(self, kernel_size, mask=False, statnames=[]):
+        """
+        Call median filter function.
+        """
+        from progressbar import ProgressBar, Bar, Percentage
+
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        print('Window of integer size', kernel_size)
+        if len(statnames) == 0:
+            statnames = self.name
+
+        pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=self.nstat).start()
+        for scnt, (statname, stat) in enumerate(self.statGen):
+            if statname not in statnames:
+                continue
+            for comp in self.components:
+                dat = stat[comp].value
+                wgt = stat['w_' + comp].value
+                filtered = self.adaptiveMedianFilt(dat, kernel_size)
+                if mask:
+                    ind = np.isnan(dat) * np.isnan(wgt)
+                    filtered[ind] = np.nan
+                stat['filt_' + comp] = filtered
+            pbar.update(scnt + 1)
+        pbar.finish()
+       
+        return
+
+
+    def PCA(self, n_comp=1, plot=False):
+        """
+        Peform principal component analysis on a stack of time series.
+        """
+
+        # First fill matrices with zero-mean time series for PCA
+        Adict = {}
+        for comp in self.components:
+            Adict[comp] = np.zeros((self.tdec.size, self.nstat))
+            for j, (statname, stat) in enumerate(self.statGen):
+                dat = stat['filt_' + comp].value
+                dat -= np.nanmean(dat)
+                ind = np.isnan(dat).nonzero()[0]
+                dat[ind] = np.nanstd(dat) * np.random.randn(len(ind))
+                Adict[comp][:,j] = dat
+
+        # Now perform PCA analysis on each displacement component
+        spatial = {}
+        temporal = {}
+        for comp in self.components:
+
+            # Compute covariance matrix
+            A = Adict[comp]
+            B = np.dot(A.T, A) / (A.shape[0] - 1.0)
+
+            # Compute SVD of covariance matrix and keep only certain PCs
+            U,s,VH_ref = np.linalg.svd(B)
+            VH = np.zeros_like(VH_ref)
+            VH[:n_comp,:] = VH_ref[:n_comp,:]
+
+            # Reconstruct reduced residuals
+            aik = np.dot(A, VH.T)
+            Ar = np.dot(aik, VH)
+            spatial[comp] = VH_ref[n_comp-1,:].squeeze()
+            temporal[comp] = aik
+
+        if plot:
+            import matplotlib.pyplot as plt
+            ax1 = plt.subplot2grid((3,2), (0,0))
+            ax2 = plt.subplot2grid((3,2), (1,0))
+            ax3 = plt.subplot2grid((3,2), (2,0))
+            ax4 = plt.subplot2grid((3,2), (0,1), rowspan=3)
+            ax1.plot(self.tdec, temporal['east'], '-b')
+            ax2.plot(self.tdec, temporal['north'], '-b')
+            ax3.plot(self.tdec, temporal['up'], '-b')
+            ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'],
+                scale=1.0)
+            plt.show()
+        
+        return
+ 
+
+    @staticmethod
+    def adaptiveMedianFilt(dat, kernel_size):
+        """
+        Perform a median filter with a sliding window. For edges, we shrink window.
+        """
+        assert kernel_size % 2 == 1, 'kernel_size must be odd'
+
+        nobs = dat.size
+        filt_data = np.nan * np.ones_like(dat)
+
+        # Beginning region
+        halfWindow = 0
+        for i in range(kernel_size//2):
+            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+            halfWindow += 1
+
+        # Middle region
+        halfWindow = kernel_size // 2
+        for i in range(halfWindow, nobs - halfWindow):
+            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+
+        # Ending region
+        halfWindow -= 1
+        for i in range(nobs - halfWindow, nobs):
+            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+            halfWindow -= 1
+
+        return filt_data
 
 
 class GenericClass:
