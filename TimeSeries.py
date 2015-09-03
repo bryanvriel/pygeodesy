@@ -41,7 +41,7 @@ class TimeSeries:
             assert False, 'Unsupported data type. Must be gps, edm, or insar'
         self.ncomp = len(self.components)
 
-        self.h5file = None
+        self.h5file = self.output_h5file = None
 
         return
 
@@ -50,9 +50,12 @@ class TimeSeries:
         """
         Make sure to close any H5 file.
         """
-        if self.h5file is not None:
+        if type(self.h5file) is h5py.File:
             print('Finished processing. Closing H5 file')
             self.h5file.close()
+        elif type(self.h5file) is dict and self.output_h5file is not None:
+            print('Finished processing. Saving H5 file')
+            self._saveh5(self.output_h5file, self.h5file)
         return
 
 
@@ -86,7 +89,7 @@ class TimeSeries:
         return
 
 
-    def loadStationH5(self, h5file, fileout=None):
+    def loadStationH5(self, h5file, fileout=None, copydict=False):
         """
         Transfers data from an h5py data stack to self.
         """
@@ -98,24 +101,69 @@ class TimeSeries:
             self.h5file = h5py.File(h5file, 'r')
         else:
             shutil.copyfile(h5file, fileout)
-            self.h5file = h5py.File(fileout, 'r+')
+            # Load all data into a python dictionary
+            if copydict:
+                self.h5file = self._loadh5(h5file)
+                self.output_h5file = fileout
+            else:
+                self.h5file = h5py.File(fileout, 'r+')
         self.statDict = self.h5file
 
         # Make a generator to loop over station data
         self.statGen = list((statname, stat) for (statname, stat) in self.h5file.items()
                              if statname != 'tdec')
 
+
         # Get the data
         for statname, stat in self.statGen:
             self.name.append(statname.lower())
-            self.lat.append(stat['lat'].value)
-            self.lon.append(stat['lon'].value)
-            self.elev.append(stat['elev'].value)
+            if type(stat['lat']) in [h5py.Dataset, h5py.Group]:
+                self.lat.append(stat['lat'].value)
+                self.lon.append(stat['lon'].value)
+                self.elev.append(stat['elev'].value)
+            else:
+                self.lat.append(stat['lat'])
+                self.lon.append(stat['lon'])
+                self.elev.append(stat['elev'])
         self.name = np.array(self.name)
         self.lat,self.lon,self.elev = [np.array(lst) for lst in [self.lat,self.lon,self.elev]]
         self.nstat = self.lat.size
-        self.tdec = self.h5file['tdec'].value
+        self.tdec = np.array(self.h5file['tdec'])
         
+        return
+
+
+    @staticmethod
+    def _loadh5(h5file):
+        """
+        Load data from an H5 file into a dictionary.
+        """
+        data = {}
+        with h5py.File(h5file, 'r') as h5file:
+            for key, value in h5file.items():
+                if type(value) == h5py.Group:
+                    group = {}
+                    for gkey, gvalue in value.items():
+                        group[gkey] = gvalue.value
+                    data[key] = group
+                else:
+                    data[key] = value.value
+        return data
+        
+
+    @staticmethod
+    def _saveh5(h5file, data):
+        """
+        Save a data stored in dictionary to H5 file.
+        """
+        with h5py.File(h5file, 'w') as hfid:
+            for key, value in data.items():
+                if type(value) is dict:
+                    Group = hfid.create_group(key)
+                    for gkey, gvalue in value.items():
+                        Group[gkey] = gvalue
+                else:
+                    hfid[key] = value
         return
 
 
@@ -223,7 +271,7 @@ class TimeSeries:
         return
 
 
-    def decompose(self, n_comp=1, plot=False, method='pca'):
+    def decompose(self, n_comp=1, plot=False, method='pca', dmod=''):
         """
         Peform principal component analysis on a stack of time series.
         """
@@ -233,31 +281,30 @@ class TimeSeries:
         for comp in self.components:
             Adict[comp] = np.zeros((self.tdec.size, self.nstat))
             for j, (statname, stat) in enumerate(self.statGen):
-                dat = stat['filt_' + comp].value
+                dat = stat[dmod + comp].value
                 dat -= np.nanmean(dat)
                 ind = np.isnan(dat).nonzero()[0]
                 dat[ind] = np.nanstd(dat) * np.random.randn(len(ind))
                 Adict[comp][:,j] = dat
 
-        # Now perform PCA analysis on each displacement component
+        from sklearn.decomposition import FastICA, PCA
+        if method == 'pca':
+            decomposer = PCA(n_components=n_comp, whiten=False)
+        elif method == 'ica':
+            decomposer = FastICA(n_components=n_comp, whiten=True, max_iter=500)
+        else:
+            raise NotImplementedError('Unsupported decomposition method')
+        
+        # Now decompose the time series
         spatial = {}
         temporal = {}
         for comp in self.components:
+            temporal[comp] = decomposer.fit_transform(Adict[comp])
+            if method == 'pca':
+                spatial[comp] = decomposer.components_.squeeze()
+            elif method == 'ica':
+                spatial[comp] = decomposer.mixing_[:,n_comp-1].squeeze()
 
-            # Compute covariance matrix
-            A = Adict[comp]
-            B = np.dot(A.T, A) / (A.shape[0] - 1.0)
-
-            # Compute SVD of covariance matrix and keep only certain PCs
-            U,s,VH_ref = np.linalg.svd(B)
-            VH = np.zeros_like(VH_ref)
-            VH[:n_comp,:] = VH_ref[:n_comp,:]
-
-            # Reconstruct reduced residuals
-            aik = np.dot(A, VH.T)
-            Ar = np.dot(aik, VH)
-            spatial[comp] = VH_ref[n_comp-1,:].squeeze()
-            temporal[comp] = aik
 
         if plot:
             import matplotlib.pyplot as plt
