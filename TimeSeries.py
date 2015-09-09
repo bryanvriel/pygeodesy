@@ -98,7 +98,10 @@ class TimeSeries:
         # If user specifies an output file, we copy the input file and open
         # the output in read/write mode
         if fileout is None:
-            self.h5file = h5py.File(h5file, 'r')
+            if copydict:
+                self.h5file = self._loadh5(h5file)
+            else:
+                self.h5file = h5py.File(h5file, 'r')
         else:
             shutil.copyfile(h5file, fileout)
             # Load all data into a python dictionary
@@ -350,6 +353,29 @@ class TimeSeries:
             halfWindow -= 1
 
         return filt_data
+
+
+    @property
+    def tstart(self):
+        return selt.tdec[0]
+    @tstart.setter
+    def tstart(self, val):
+        raise AttributeError('Cannot set tstart explicitly')
+
+    @property
+    def trel(self):
+        return self.tdec - self.tdec[0]
+    @trel.setter
+    def trel(self, val):
+        raise AttributeError('Cannot set tstart explicitly')
+
+    @property
+    def numObs(self):
+        return len(self.tdec)
+    @numObs.setter
+    def numObs(self, val):
+        raise AttributeError('Cannot set numObs explicitly')
+
 
 
 class GenericClass:
