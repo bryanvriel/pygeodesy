@@ -46,6 +46,32 @@ class TimeSeries:
         return
 
 
+    def setFormat(self, fmt):
+        """
+        Define the interface to the data dictionary.
+        """
+        if fmt == 'h5':
+            self.getData = self._h5get
+        else:
+            self.getData = self._get
+        return
+
+
+    def getData(self, stat, attr):
+        if type(stat) is dict:
+            return np.array(stat[attr])
+        else:
+            return stat.attr
+
+
+    def _h5get(self, attr):
+        return np.array(self.h5file[attr])
+
+
+    def _get(self, attr):
+        return self.attr
+
+
     def __del__(self):
         """
         Make sure to close any H5 file.
@@ -182,7 +208,7 @@ class TimeSeries:
         return
            
 
-    def getDataArrays(self, order='columns'):
+    def getDataArrays(self, order='columns', h5=True):
         """
         Traverses the station dictionary to construct regular sized arrays for the
         data and weights.
@@ -191,7 +217,7 @@ class TimeSeries:
 
         # Get first station to determine the number of data points
         for statname, stat in self.statGen:
-            dat = getattr(stat, self.components[0])
+            dat = self.getData(stat, self.components[0])
             ndat = dat.size
             break 
 
@@ -202,8 +228,9 @@ class TimeSeries:
         for component in self.components:
             for statname, cnt in zip(self.name, range(self.nstat)):
                 stat = self.statDict[statname]
-                compDat = getattr(stat, component)
-                compWeight = getattr(stat, 'w_' + component)
+                
+                compDat = self.getData(stat, component)
+                compWeight = self.getData(stat, 'w_' + component)
                 data[:,j] = compDat
                 weights[:,j] = compWeight
                 j += 1

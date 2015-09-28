@@ -31,7 +31,7 @@ def subsetDataWithPoly(inputDict, points):
 
 
 def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, ndays=None,
-               statlist=None, subfactor=1):
+               statlist=None, subfactor=1, h5=True):
     """
     Subsets GPS data based on a window of observation times.
     """
@@ -59,27 +59,45 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
     nvalidsss = []
     for statname in statnames:
         stat = inputDict[statname]
+        if statname == 'tdec': continue
         # Test to see if station has enough valid data
-        indValid = np.isfinite(stat.east[tbool]).nonzero()[0]
+        if h5:
+            dat = np.array(stat['east'])
+        else:
+            dat = stat.east
+        indValid = np.isfinite(dat[tbool]).nonzero()[0]
         if indValid.size < minValid:
             del inputDict[statname]
         else:
             if checkOnly:
                 continue
             else:
+                # First get list of station attributes
+                if h5:
+                    attrlist = list(stat.keys())
+                else:
+                    attrlist = dir(stat)
                 for attr in ('east', 'north', 'up', 'w_east', 'w_north', 'w_up', 'status'):
-                    if not hasattr(stat, attr):
+                    if attr not in attrlist:
                         continue
-                    dat = getattr(stat, attr)
-                    print(dat.shape, attr)
-                    setattr(stat, attr, dat[tbool])
-                    try:
-                        filtdat = getattr(stat, 'filt_' + attr)
-                        setattr(stat, 'filt_' + attr, filtdat[tbool])
-                    except AttributeError:
-                        pass
+                    if h5:
+                        dat = np.array(stat[attr])
+                        print(dat.shape, attr)
+                        stat[attr] = dat[tbool]
+                        try:
+                            filtdat = np.array(stat['filt_' + attr])
+                            stat['filt_' + attr] = filtdat[tbool]
+                        except KeyError:
+                            pass
+                    else:
+                        dat = getattr(stat, attr)
+                        print(dat.shape, attr)
+                        setattr(stat, attr, dat[tbool])
+                        try:
+                            filtdat = getattr(stat, 'filt_' + attr)
+                            setattr(stat, 'filt_' + attr, filtdat[tbool])
+                        except AttributeError:
+                            pass
                 nvalidsss.append(indValid.size)
-
-    #plt.plot(nvalidsss, 'o'); plt.show(); assert False
 
     return tobs
