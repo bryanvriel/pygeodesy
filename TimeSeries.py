@@ -355,6 +355,27 @@ class TimeSeries:
         return filt_data
 
 
+    def computeStatDistance(self, statname1, statname2):
+        """
+        Compute the distance between two stations.
+        """
+        ind1 = (self.name == statname1.lower()).nonzero()[0]
+        ind2 = (self.name == statname2.lower()).nonzero()[0]
+        assert len(ind1) == 1, 'Cannot find first station'
+        assert len(ind2) == 1, 'Cannot find second station'
+
+        # Retrieve lat/lon
+        lon1, lat1 = self.lon[ind1[0]], self.lat[ind1[0]]
+        lon2, lat2 = self.lon[ind2[0]], self.lat[ind2[0]]
+
+        # Convert to XYZ and compute Cartesian distance
+        from topoutil import llh2xyz
+        X1 = llh2xyz(lat1, lon1, 0.0, deg=True).squeeze()
+        X2 = llh2xyz(lat2, lon2, 0.0, deg=True).squeeze()
+        dX = np.linalg.norm(X2 - X1)
+        return dX
+
+
     @property
     def tstart(self):
         return selt.tdec[0]
