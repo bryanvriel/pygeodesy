@@ -62,6 +62,41 @@ class STN:
             ones = np.ones_like(self.north, dtype=float)
             self.sn, self.se, self.su = ones, ones, ones
             fid.close()
+
+        elif 'usgs' in format:
+            fname = '%s/%s.rneu' % (gpsdir, stname.lower())
+            try:
+                fid = open(fname, 'r')
+            except IOError:
+                print('skipping', fname)
+                return None
+            data = []
+            for line in fid:
+                linedat = line.split()
+                t = float(linedat[1])
+                e,n,u = [float(val) for val in linedat[2:5]]
+                se,sn,su = [float(val)**2 for val in linedat[6:9]]
+                data.append([t,e,n,u,se,sn,su])
+            fid.close()
+            data = np.array(data)
+            self.tdec = data[:,0]
+            self.north, self.east, self.up = data[:,1], data[:,2], data[:,3]
+            self.sn, self.se, self.su = data[:,4], data[:,5], data[:,6]
+
+        elif 'gam' in format:
+            try:
+                fname = '%s/%s.gam' % (gpsdir, stname)
+                t,e,n,se,sn,u,su = np.loadtxt(fname, usecols=(0,1,2,3,4,6,7), unpack=True)
+            except IOError:
+                try:
+                    fname = '%s/%s' % (gpsdir, stname)
+                    t,e,n,se,sn,u,su = np.loadtxt(fname, usecols=(0,1,2,3,4,6,7), unpack=True)
+                except IOError:
+                    print('skipping', fname)
+                    return
+            self.tdec = t
+            self.north, self.east, self.up = n, e, u
+            self.sn, self.se, self.su = sn, se, su
                         
         else:
             assert txtreader is not None, 'No reader specified for GPS data'

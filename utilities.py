@@ -1,10 +1,37 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.path import Path
+
+
+def subsetDataWithPoly(inputDict, points):
+    """
+    Subset GPS stations within a polynomial.
+    """
+
+    # Make a path out of the polynomial points
+    poly = Path(points)
+
+    # Figure out which stations lie inside the polygon
+    keepstat = []
+    for statname, stat in inputDict.items():
+        if statname == 'tdec':
+            continue
+        test = poly.contains_points(np.array([[stat.lon, stat.lat]]))
+        if poly.contains_points(np.array([[stat.lon, stat.lat]]))[0]:
+            keepstat.append(statname)
+
+    # Remove the ones that don't
+    statnames = list(inputDict.keys())
+    for statname in statnames:
+        if statname.lower() not in keepstat:
+            del inputDict[statname]
+
+    return
 
 
 def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, ndays=None,
-               statlist=None, subfactor=1):
+               statlist=None, subfactor=1, h5=True):
     """
     Subsets GPS data based on a window of observation times.
     """
@@ -32,19 +59,45 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
     nvalidsss = []
     for statname in statnames:
         stat = inputDict[statname]
+        if statname == 'tdec': continue
         # Test to see if station has enough valid data
-        indValid = np.isfinite(stat.east[tbool]).nonzero()[0]
+        if h5:
+            dat = np.array(stat['east'])
+        else:
+            dat = stat.east
+        indValid = np.isfinite(dat[tbool]).nonzero()[0]
         if indValid.size < minValid:
             del inputDict[statname]
         else:
             if checkOnly:
                 continue
             else:
-                for attr in ('east', 'north', 'up', 'w_east', 'w_north', 'w_up'):
-                    dat = getattr(stat, attr)
-                    setattr(stat, attr, dat[tbool])
+                # First get list of station attributes
+                if h5:
+                    attrlist = list(stat.keys())
+                else:
+                    attrlist = dir(stat)
+                for attr in ('east', 'north', 'up', 'w_east', 'w_north', 'w_up', 'status'):
+                    if attr not in attrlist:
+                        continue
+                    if h5:
+                        dat = np.array(stat[attr])
+                        print(dat.shape, attr)
+                        stat[attr] = dat[tbool]
+                        try:
+                            filtdat = np.array(stat['filt_' + attr])
+                            stat['filt_' + attr] = filtdat[tbool]
+                        except KeyError:
+                            pass
+                    else:
+                        dat = getattr(stat, attr)
+                        print(dat.shape, attr)
+                        setattr(stat, attr, dat[tbool])
+                        try:
+                            filtdat = getattr(stat, 'filt_' + attr)
+                            setattr(stat, 'filt_' + attr, filtdat[tbool])
+                        except AttributeError:
+                            pass
                 nvalidsss.append(indValid.size)
-
-    #plt.plot(nvalidsss, 'o'); plt.show(); assert False
 
     return tobs

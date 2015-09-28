@@ -96,29 +96,30 @@ class GPS(TimeSeries):
         tmin = 1000.0
         tmax = 3000.0
         for stn in self.stns:
-            tmin_cur = stn.tdec[0]
-            tmax_cur = stn.tdec[-1]
+            tmin_cur = stn.tdec.min()
+            tmax_cur = stn.tdec.max()
             if tmin_cur > tmin:
                 tmin = tmin_cur
             if tmax_cur < tmax:
                 tmax = tmax_cur
 
-        tcommon = generateRegularTimeArray(tmin, tmax)
-        days = tcommon.size
         refflag = False
         if t0 is not None and tf is not None:
             refflag = True
             tref = generateRegularTimeArray(t0, tf)
             days = tref.size
             tree = cKDTree(tref.reshape((days,1)), leafsize=2*days)
+        else:
+            tref = generateRegularTimeArray(tmin, tmax)
+            days = tref.size
 
         # Retrieve data that lies within the common window
         for stn in self.stns:
             if interp:
-                stn.north = np.interp(tcommon, stn.tdec, stn.north)
-                stn.east = np.interp(tcommon, stn.tdec, stn.east)
-                stn.up = np.interp(tcommon, stn.tdec, stn.up)
-                stn.tdec = tcommon.copy()
+                stn.north = np.interp(tref, stn.tdec, stn.north)
+                stn.east = np.interp(tref, stn.tdec, stn.east)
+                stn.up = np.interp(tref, stn.tdec, stn.up)
+                stn.tdec = tref.copy()
             elif t0 is not None and tf is not None:
                 north = np.nan * np.ones_like(tref)
                 east = np.nan * np.ones_like(tref)
@@ -154,7 +155,7 @@ class GPS(TimeSeries):
         """
         # Loop over the stations
         mDicts = {}
-        for statname, stat in self.statDict.items():
+        for statname, stat in self.statGen:
 
             # Construct a G matrix
             Gref = np.asarray(ts.Timefn(repDict[statname], tdec-tdec[0])[0], order='C')
