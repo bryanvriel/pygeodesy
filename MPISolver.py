@@ -192,16 +192,34 @@ class MPISolver(Solver):
         return exitFlag
 
 
-    def distributem(self):
+    def distributem(self, reconstruct=True, transient=False):
         """
         Distribute the solution coefficients into the data object station dictionary.
         """
+        if transient:
+            cutoff = self.cutoff
+        else:
+            cutoff = 0
         if self.rank == 0:
             ind = 0
             for component in self.components:
                 for statname in self.data.name:
                     stat = self.data.statDict[statname]
-                    setattr(stat, 'm_' + component, self.m0[ind,:])
+                    m = self.m0[ind,:]
+                    recon = np.dot(self.G[:,cutoff:], m[cutoff:])
+                    signal_remove = np.dot(self.G[:,:cutoff], m[:cutoff])
+                    try:
+                        setattr(stat, 'm_' + component, self.m0[ind,:])
+                        if reconstruct:
+                            dat = getattr(stat, component)
+                            setattr(stat, 'filt_' + component, recon)
+                            setattr(stat, component, dat - signal_remove)
+                    except AttributeError:
+                        stat['m_' + component] = self.m0[ind,:]
+                        if reconstruct:
+                            dat = np.array(stat[component])
+                            stat['filt_' + component] = recon
+                            stat[component] = dat - signal_remove
                     ind += 1
         return
 

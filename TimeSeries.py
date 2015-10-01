@@ -140,7 +140,7 @@ class TimeSeries:
 
         # Make a generator to loop over station data
         self.statGen = list((statname, stat) for (statname, stat) in self.h5file.items()
-                             if statname != 'tdec')
+                             if statname not in ['tdec', 'G', 'cutoff'])
 
 
         # Get the data
@@ -185,6 +185,7 @@ class TimeSeries:
         """
         Save a data stored in dictionary to H5 file.
         """
+        print('H5 file:', h5file)
         with h5py.File(h5file, 'w') as hfid:
             for key, value in data.items():
                 if type(value) is dict:
