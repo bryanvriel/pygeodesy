@@ -1,9 +1,11 @@
 #-*- coding: utf-8 -*-
 
 import numpy as np
+import matplotlib.pyplot as plt
 import tsinsar as ts
 from .Solver import Solver
 from .MPClasses import MPWeights
+import sys
 
 dmultl = ts.dmultl
 
@@ -13,21 +15,25 @@ class MPISolver(Solver):
     """
 
     def __init__(self, data, timeRep, solver, penaltyDict, communicator=None, 
-                 smooth=1.0, L0=None):
+                 smooth=1.0, L0=None, seasrep=None):
         """
         Initialize the parent Solver class and get my MPI properties.
         """
-        super().__init__(data, timeRep, solver)
+        super().__init__(data, timeRep, solver, seasrep=seasrep)
         from mpi4py import MPI
         self.comm = communicator or MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.tasks = self.comm.Get_size()
+        self.m_seas0 = None
 
         # Extra initialization for master processor
         if self.rank == 0:
 
             # Get data and weight matrices; row contiguous
-            self.datArr0, self.wgtArr0 = self.data.getDataArrays(order='rows')
+            if self.data.have_seasonal:
+                self.datArr0, self.wgtArr0, self.m_seas0 = self.data.getDataArrays(order='rows')
+            else:
+                self.datArr0, self.wgtArr0 = self.data.getDataArrays(order='rows')
             assert self.ndat == self.datArr0.shape[1] 
 
             # Compute distance weights
@@ -71,7 +77,7 @@ class MPISolver(Solver):
         subShape = (self.procN, self.ndat)
         self.datArr = np.empty(subShape)
         self.wgtArr = np.empty(subShape)        
-       
+               
         # Create row data types for data and parameter chunks
         self.dat_rowtype = MPI.DOUBLE.Create_contiguous(self.ndat)
         self.dat_rowtype.Commit()
@@ -84,6 +90,15 @@ class MPISolver(Solver):
                             self.datArr, root=0)
         self.comm.Scatterv([self.wgtArr0, (self.sendcnts, None), self.dat_rowtype],
                             self.wgtArr, root=0)
+
+        # Repeat process for any seasonal data
+        if self.data.have_seasonal:
+            self.m_seas = np.empty((self.procN, self.data.npar_seasonal))
+            seas_rowtype = MPI.DOUBLE.Create_contiguous(self.data.npar_seasonal)
+            seas_rowtype.Commit()
+            self.comm.Scatterv([self.m_seas0, (self.sendcnts, None), seas_rowtype],
+                                self.m_seas, root=0)
+            seas_rowtype.Free()
 
         # Scatter the scalar penalties
         penalties = np.empty((self.procN,))
@@ -102,7 +117,8 @@ class MPISolver(Solver):
         return
         
 
-    def invert(self, maxiter=1, weightingMethod='log', wtype='median', norm_tol=1.0e-4):
+    def invert(self, maxiter=1, weightingMethod='log', wtype='median', norm_tol=1.0e-4,
+        nsplmod=8):
 
         # Choose my estimator for the weights
         if 'mean' == wtype:
@@ -116,16 +132,43 @@ class MPISolver(Solver):
         objSolver = self.solverClass(cutoff=self.cutoff, maxiter=1, eps=1.0e-2,
                                      weightingMethod=weightingMethod)
 
+        # Make a seasonal amplitude modulator if necessary
+        if self.data.have_seasonal:
+            rep = [['ISPLINE',[3],[nsplmod]]]
+            G_mod_ref = ts.Timefn(rep, self.data.trel)[0]
+            self.nsplmod = nsplmod
+        else:
+            self.nsplmod = 0
+        
         # Iterate
+        nobs = self.nstat * self.ncomp
         for ii in range(maxiter):
             if self.rank == 0: print('At iteration', ii)
             # Loop over my portion of the data
             for jj in range(self.procN):
+
+                # Check if a seasonal representation has been specified
+                if self.data.have_seasonal:
+                    G_seas = ts.Timefn(self.timeRep.rep, self.data.trel)[0]
+                    template = np.dot(G_seas, self.m_seas[jj,:])
+                    # Normalize the template
+                    mean_spline = np.mean(template)
+                    fit_norm = template - mean_spline
+                    template = fit_norm / (0.5*(fit_norm.max() - fit_norm.min()))
+                    G_mod = G_mod_ref.copy()
+                    for nn in range(nsplmod):
+                        G_mod[:,nn] *= template
+                    G = np.column_stack((G_mod, self.G))
+                else:
+                    G = self.G
+
                 # Get boolean indices of valid observations and weights
                 dat = self.datArr[jj,:].copy()
                 wgt = self.wgtArr[jj,:].copy()
                 ind = np.isfinite(dat) * np.isfinite(wgt)
-                Gsub, dat, wgt = self.G[ind,:], dat[ind], wgt[ind]
+                
+                # Subset the data and do the inversion
+                Gsub, dat, wgt = G[ind,:], dat[ind], wgt[ind]
                 # Get the penalties
                 λ = self.λ[jj,self.cutoff:]
                 # Perform estimation and store weights
@@ -141,6 +184,7 @@ class MPISolver(Solver):
 
             # Master computes the new weights
             if self.rank == 0:
+                print(' - updating weights...')
                 exitFlag = self._updateWeights(estimator, norm_tol)
             else:
                 exitFlag = None
@@ -192,7 +236,7 @@ class MPISolver(Solver):
         return exitFlag
 
 
-    def distributem(self, reconstruct=True, transient=False):
+    def distributem(self, reconstruct=True, transient=False, nsplmod=8):
         """
         Distribute the solution coefficients into the data object station dictionary.
         """
@@ -200,26 +244,56 @@ class MPISolver(Solver):
             cutoff = self.cutoff
         else:
             cutoff = 0
+
+        # Make a seasonal amplitude modulator if necessary
+        if self.data.have_seasonal:
+            rep = [['ISPLINE',[3],[nsplmod]]]
+            G_mod_ref = ts.Timefn(rep, self.data.trel)[0]
+
         if self.rank == 0:
             ind = 0
             for component in self.components:
-                for statname in self.data.name:
-                    stat = self.data.statDict[statname]
+                for statname, stat in self.data.statGen:
                     m = self.m0[ind,:]
-                    recon = np.dot(self.G[:,cutoff:], m[cutoff:])
-                    signal_remove = np.dot(self.G[:,:cutoff], m[:cutoff])
+
+                    # Check if a seasonal representation has been specified
+                    if self.data.have_seasonal:
+                        G_seas = ts.Timefn(self.timeRep.rep, self.data.trel)[0]
+                        template = np.dot(G_seas, self.m_seas0[ind,:])
+                        # Normalize the template
+                        mean_spline = np.mean(template)
+                        fit_norm = template - mean_spline
+                        template = fit_norm / (0.5*(fit_norm.max() - fit_norm.min())) 
+                        G_mod = G_mod_ref.copy()
+                        for nn in range(nsplmod):
+                            G_mod[:,nn] *= template
+                        G = np.column_stack((G_mod, self.G))
+                    else:
+                        G = self.G
+
+                    recon = np.dot(G[:,cutoff:], m[cutoff:])
+                    signal_steady = np.dot(G[:,nsplmod:cutoff], m[nsplmod:cutoff])
+                    signal_seasonal = np.dot(G[:,:nsplmod], m[:nsplmod])
+                    signal_remove = signal_steady + signal_seasonal
+
+                    #recon = np.dot(G[:,:nsplmod], m[:nsplmod])
+                    #signal_remove = np.dot(G[:,nsplmod:], m[nsplmod:])
+
                     try:
                         setattr(stat, 'm_' + component, self.m0[ind,:])
                         if reconstruct:
                             dat = getattr(stat, component)
                             setattr(stat, 'filt_' + component, recon)
                             setattr(stat, component, dat - signal_remove)
+                            setattr(stat, 'steady_' + component, signal_remove)
                     except AttributeError:
                         stat['m_' + component] = self.m0[ind,:]
                         if reconstruct:
                             dat = np.array(stat[component])
                             stat['filt_' + component] = recon
                             stat[component] = dat - signal_remove
+                            stat['steady_' + component] = signal_steady
+                            stat['seasonal_' + component] = signal_seasonal
                     ind += 1
         return
 

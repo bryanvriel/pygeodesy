@@ -41,7 +41,8 @@ class TimeSeries:
             assert False, 'Unsupported data type. Must be gps, edm, or insar'
         self.ncomp = len(self.components)
 
-        self.h5file = self.output_h5file = None
+        self.h5file = self.output_h5file = self.statGen = None
+        self.have_seasonal = False
 
         return
 
@@ -109,8 +110,7 @@ class TimeSeries:
         self.lat,self.lon,self.elev = [np.array(lst) for lst in [self.lat,self.lon,self.elev]]
         self.nstat = self.lat.size
         self.statDict = inputDict
-        self.statGen = ((statname, stat) for (statname, stat) in self.statDict.items()
-                         if statname != 'tdec')
+        self.makeStatGen()
 
         return
 
@@ -139,11 +139,21 @@ class TimeSeries:
         self.statDict = self.h5file
 
         # Make a generator to loop over station data
-        self.statGen = list((statname, stat) for (statname, stat) in self.h5file.items()
-                             if statname not in ['tdec', 'G', 'cutoff'])
-
-
+        self.makeStatGen()
+        
         # Get the data
+        self.transferDictInfo(h5=True)
+        return
+
+
+    def transferDictInfo(self, h5=True):
+        """
+        Transfer coordinates, names, and tdec from dictionary to self.
+        """
+        if not h5:
+            raise NotImplementedError('still on todo list')
+        for attr in ('name', 'lat', 'lon', 'elev'):
+            setattr(self, attr, [])
         for statname, stat in self.statGen:
             self.name.append(statname.lower())
             if type(stat['lat']) in [h5py.Dataset, h5py.Group]:
@@ -158,7 +168,26 @@ class TimeSeries:
         self.lat,self.lon,self.elev = [np.array(lst) for lst in [self.lat,self.lon,self.elev]]
         self.nstat = self.lat.size
         self.tdec = np.array(self.h5file['tdec'])
-        
+        return
+
+    
+    def loadSeasonalH5(self, h5file):
+        """
+        Transfers data from an h5py data stack to self.
+        """
+        # Load the seasonal dictionary
+        seas_dat = self._loadh5(h5file)
+
+        # Get the seasonal coefficients
+        for statname, stat in self.statGen:
+            seas_stat = seas_dat[statname]
+            for component in self.components:
+                m = seas_stat['m_' + component]
+                stat['seasm_' + component] = m
+                self.npar_seasonal = len(m)
+
+        # Finally, make sure to remember that we have seasonal data
+        self.have_seasonal = True
         return
 
 
@@ -197,6 +226,15 @@ class TimeSeries:
         return
 
 
+    def makeStatGen(self):
+        """
+        Make a generator for looping over the stations and station names.
+        """
+        self.statGen = list((statname, stat) for (statname, stat) in self.statDict.items()
+            if statname not in ['tdec', 'G', 'cutoff'])
+        return
+
+
     def zeroMeanDisplacements(self):
         """
         Remove the mean of the finite values in each component of displacement.
@@ -222,25 +260,33 @@ class TimeSeries:
             ndat = dat.size
             break 
 
-        # Construct regular arrays and fill them
-        data = np.empty((ndat, self.nstat*self.ncomp))
-        weights = np.empty((ndat, self.nstat*self.ncomp))
+        # Construct regular arrays
+        nobs = self.nstat * self.ncomp
+        if self.have_seasonal:
+            seas_coeffs = np.empty((self.npar_seasonal, nobs))
+        data = np.empty((ndat, nobs))
+        weights = np.empty((ndat, nobs))
+
+        # Fill them
         j = 0
         for component in self.components:
-            for statname, cnt in zip(self.name, range(self.nstat)):
-                stat = self.statDict[statname]
-                
+            for statname, stat in self.statGen:
                 compDat = self.getData(stat, component)
                 compWeight = self.getData(stat, 'w_' + component)
                 data[:,j] = compDat
                 weights[:,j] = compWeight
+                if self.have_seasonal:
+                    seas_coeffs[:,j] = self.getData(stat, 'seasm_' + component)
                 j += 1
-        
-        if order == 'rows':
-            return data.T.copy(), weights.T.copy()
-        else:
-            return data, weights
 
+        # Custom packaging
+        return_arrs = [data, weights]
+        if self.have_seasonal:
+            return_arrs.append(seas_coeffs)
+        if order == 'rows':
+            return_arrs = [arr.T.copy() for arr in return_arrs]
+        return return_arrs
+        
 
     def computeNetworkWeighting(self, smooth=1.0, n_neighbor=3, L0=None):
         """
