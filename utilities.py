@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.path import Path
 
 
-def subsetDataWithPoly(inputDict, points):
+def subsetDataWithPoly(inputDict, points, h5=True):
     """
     Subset GPS stations within a polynomial.
     """
@@ -13,12 +13,15 @@ def subsetDataWithPoly(inputDict, points):
     poly = Path(points)
 
     # Figure out which stations lie inside the polygon
-    keepstat = []
+    keepstat = ['tdec', 'G', 'cutoff']
     for statname, stat in inputDict.items():
-        if statname == 'tdec':
+        if statname in ['tdec', 'G', 'cutoff']:
             continue
-        test = poly.contains_points(np.array([[stat.lon, stat.lat]]))
-        if poly.contains_points(np.array([[stat.lon, stat.lat]]))[0]:
+        if h5:
+            test = poly.contains_points(np.array([[stat['lon'], stat['lat']]]))[0]
+        else:
+            test = poly.contains_points(np.array([[stat.lon, stat.lat]]))[0]
+        if test:
             keepstat.append(statname)
 
     # Remove the ones that don't
@@ -47,6 +50,7 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
     tbool = tobs >= t0
     if ndays is None:
         tbool *= tobs <= tf
+        tbool = tbool.nonzero()[0][::subfactor]
     else:
         beg_ind = tbool.nonzero()[0][0]
         end_ind = beg_ind + ndays
@@ -82,7 +86,6 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
                         continue
                     if h5:
                         dat = np.array(stat[attr])
-                        print(dat.shape, attr)
                         stat[attr] = dat[tbool]
                         try:
                             filtdat = np.array(stat['filt_' + attr])
@@ -91,7 +94,6 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
                             pass
                     else:
                         dat = getattr(stat, attr)
-                        print(dat.shape, attr)
                         setattr(stat, attr, dat[tbool])
                         try:
                             filtdat = getattr(stat, 'filt_' + attr)

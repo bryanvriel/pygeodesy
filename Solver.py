@@ -9,7 +9,7 @@ class Solver:
     Abstract class for performing time series inverisons for various data types.
     """
 
-    def __init__(self, dataObj, timeRep, solver):
+    def __init__(self, dataObj, timeRep, solver, seasrep=None):
         """
         Initialize with TimeSeries and TimeRepresentation objects.
         """
@@ -19,7 +19,7 @@ class Solver:
         self.ncomp = dataObj.ncomp
         
         # Get the time rep matrices
-        self.Gss, self.Gtran = self.timeRep.matrixNoReg, self.timeRep.matrixReg
+        #self.Gss, self.Gtran = self.timeRep.matrixNoReg, self.timeRep.matrixReg
         self.G = self.timeRep.matrix
         self.cutoff = self.timeRep.cutoff
 
