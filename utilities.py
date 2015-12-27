@@ -101,3 +101,35 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
                 nvalidsss.append(indValid.size)
 
     return tobs
+
+
+def partitionStations(data, comm=None, strategy='stations'):
+    """
+    Utility function for determining partitioning strategy.
+    """
+    # Save the communicator and get rank and size
+    from mpi4py import MPI
+    comm = comm or MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
+
+    # Determine partitioning strategy
+    if strategy == 'stations':
+        N = data.nstat
+    elif strategy == 'total':
+        N = data.nstat * data.ncomp
+    else:
+        raise NotImplementedError('Unsupported partitioning strategy')
+
+    # Do the partitioning
+    nominal_load = N // size
+    if rank == size - 1:
+        procN = N - rank * nominal_load
+    else:
+        procN = nominal_load
+    sendcnts = comm.allgather(procN)
+
+    return sendcnts
+   
+
+# end of file 

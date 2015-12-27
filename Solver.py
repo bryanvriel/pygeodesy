@@ -151,6 +151,46 @@ class Solver:
 
             if plot:
                 fig.savefig()
+
+
+    @staticmethod
+    def robust_solve(Ain, bin, penalty):
+        """
+        Solves the problem:
+            |d - G*m|_1 + λ*|m|_2^2
+        """
+
+        b = matrix(bin.tolist())
+        A = matrix(Ain.T.tolist())
+        m,n = A.size
+
+        # Fill q
+        q = matrix(0.0, (n+m,1))
+        q[n:] = 1.0
+
+        # Fill h
+        h = matrix(0.0, (2*m,1))
+        h[:m] = -1.0 * b
+        h[m:] =  1.0 * b
+
+        # Fill P
+        P = matrix(0.0, (n+m,n+m))
+        eye = spmatrix(1.0, range(n), range(n))
+        P[:n,:n] = 2.0 * penalty * eye
+        P = sparse(P)
+
+        # Fill g
+        G = matrix(0.0, (2*m,n+m))
+        G[:m,:n] = -1.0 * A
+        G[m:,:n] =  1.0 * A
+        eye = spmatrix(1.0, range(m), range(m))
+        G[:m,n:] = -1.0 * eye
+        G[m:,n:] = -1.0 * eye
+        G = sparse(G)
+
+        # Call solver
+        x = solvers.qp(P, q, G=G, h=h)['x'][:n]
+        return np.array(x).squeeze()
                 
         
 # end of file

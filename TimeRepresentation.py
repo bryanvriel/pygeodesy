@@ -10,7 +10,7 @@ class TimeRepresentation:
     Class for parameterizing temporal evolution functions.
     """
 
-    def __init__(self, t, rep=None, cutoff=0, G=None):
+    def __init__(self, t, rep=None, cutoff=None, G=None):
 
         self.t = t
         self.rep = rep
@@ -27,6 +27,161 @@ class TimeRepresentation:
             self._matrix = G
             self.npar = G.shape[1]
 
+        self.repDict = None
+        self.repKeys = []
+
+        return
+
+
+    def addEntry(self, *args):
+        """
+        Add a time rep entry to dictionary.
+        """
+
+        nargs = len(args)
+        assert nargs > 1, 'Not enough arguments supplied to addEntry'
+        key = args[0]
+
+        if self.repDict is None:
+            self.repDict = {
+        }
+        if nargs > 2:
+            values = args[1:]
+        else:
+            values = args[1]
+        if 'ispline' in key:
+            tk = np.linspace(self.t[0], self.t[-1], values[1][0])
+            dtk = 2.0 * (tk[1] - tk[0])
+            print('Spline time:', dtk)
+        self.repDict[key.upper()] = values
+        self.repKeys.append(key.upper())
+        return
+
+
+    def deleteEntry(self, key):
+        """
+        Delete a time rep entry from dictionary.
+        """
+        if key in self.repKeys:
+            del self.repDict[key]
+            self.repKeys.remove(key)
+        return
+
+
+    def tolist(self):
+        """
+        Construct GIAnT-compatible list of time series representation.
+        """
+        assert self.repDict is not None, 'Must construct time dictionary first'
+
+        rep = []
+        for key in self.repKeys:
+            values = self.repDict[key]
+            repType = key.upper()
+            if 'STEP' in repType:
+                repType = 'STEP'
+            elif 'EXP' in repType:
+                repType = 'EXP'
+            elif 'LOG' in repType:
+                repType = 'LOG'
+            elif 'ISPLINE' in repType:
+                repType = 'ISPLINE'
+
+            if type(values) is list:
+                entry = [repType, values]
+            else:
+                entry = [repType]
+                for value in values:
+                    entry.append(value)
+            rep.append(entry)
+        return rep
+
+
+    def getFunctionalPartitions(self, returnstep=False):
+        """
+        Return the indices of the partitions.
+        """
+
+        steady = []; seasonal = []; post = []; step = []
+        current = 0
+        for cnt, inkey in enumerate(self.repKeys):
+
+            key = inkey.lower()
+            if 'poly' in key:
+                steady.extend([current, current+1])
+                current += 2
+            elif 'step' in key:
+                steady.extend([current])
+                step.extend([current])
+                current += 1
+            elif 'exp' in key:
+                post.extend([current])
+                current += 1
+            elif 'log' in key:
+                post.extend([current])
+                current += 1
+            elif 'seasonal' in key:
+                seasonal.extend([current, current+1, current+2, current+3])
+                current += 4
+            elif 'ispline' in key:
+                nspl = self.repDict[key.upper()][1][0]
+                post.extend((current + np.arange(nspl, dtype=int)).tolist())
+                current += nspl
+
+        if returnstep:
+            return steady, seasonal, post, step
+        else:
+            return steady, seasonal, post
+
+
+    def maskRepresentation(self, mask):
+        """
+        Given a mask with the same size as self.t, we remove any entries from the
+        dictionary that are not constrained by the data.
+        """
+
+        assert len(mask) == len(self.t), 'incompatible mask size'
+
+        # Get time of first valid observation
+        valid_times = self.t[mask]
+        t0, tf = valid_times[0], valid_times[-1]
+
+        # Loop over keys
+        keepKeys = []
+        for key in copy.deepcopy(self.repKeys):
+
+            keep = True
+            values = self.repDict[key]
+            repType = key.upper()
+            if 'STEP' in repType:
+                repType = 'STEP'
+            elif 'EXP' in repType:
+                repType = 'EXP'
+            elif 'LOG' in repType:
+                repType = 'LOG'
+            elif 'ISPLINE' in repType:
+                repType = 'ISPLINE'
+
+            if repType in ['STEP', 'EXP', 'LOG']:
+
+                # Extract t0
+                if repType == 'STEP':
+                    toff = values[0]
+                else:
+                    toff = values[0][0]
+
+                # Test it
+                if toff < t0:
+                    keep = False
+                if toff > tf:
+                    keep = False
+
+            if not keep:
+                self.deleteEntry(key)
+            else:
+                keepKeys.append(key)
+
+        self.repKeys = keepKeys
         return
 
 
@@ -34,7 +189,7 @@ class TimeRepresentation:
         """
         Store the GIAnT-style representation.
         """
-        assert  type(rep) is list, 'input representation must be a list'
+        assert type(rep) is list, 'input representation must be a list'
         self.rep = rep
         self._rep2matrix()
         return
@@ -52,13 +207,15 @@ class TimeRepresentation:
         """
         Partition the time representation matrix into non-reg and reg coefficients.
         """
+        # Determine or unpack regularization indices
         if cutoff is not None and self.cutoff is None:
-            self.cutoff = cutoff
-        if self.cutoff > 0:
-            self._matrixNoReg = self._matrix[:,:self.cutoff]
+            noreg_ind = range(cutoff)
+            reg_ind = np.setxor1d(range(self.npar), noreg_ind)
         else:
-            self._matrixNoReg = None
-        self._matrixReg = self._matrix[:,self.cutoff:]
+            noreg_ind, reg_ind = self.noreg_ind, self.reg_ind
+        # Slice the matrix
+        self._matrixNoReg = self._matrix[:,noreg_ind]
+        self._matrixReg = self._matrix[:,reg_ind]
         return
 
 
@@ -66,7 +223,13 @@ class TimeRepresentation:
         """
         Convert the string representation to a numpy array
         """
-        self._matrix = np.asarray(ts.Timefn(self.rep, self.t-self.t[0])[0], order='C')
+        # Use Timefn to get matrix
+        self._matrix, mName, regF = ts.Timefn(self.rep, self.t-self.t[0])
+        # Determine indices for non-regularized variables
+        self.noreg_ind = (regF < 1.0).nonzero()[0]
+        # And indices for regularized variables
+        self.reg_ind = (regF > 0.1).nonzero()[0]
+        # Store number of parameters
         self.npar = self._matrix.shape[1]
         return 
 
