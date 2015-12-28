@@ -116,12 +116,17 @@ def partitionStations(data, comm=None, strategy='stations'):
     rank = comm.Get_rank()
 
     # Determine partitioning strategy
-    if strategy == 'stations':
-        N = data.nstat
-    elif strategy == 'total':
-        N = data.nstat * data.ncomp
+    if isinstance(strategy, int):
+        N = strategy
+    elif isinstance(strategy, str):
+        if strategy == 'stations':
+            N = data.nstat
+        elif strategy == 'total':
+            N = data.nstat * data.ncomp
+        else:
+            raise NotImplementedError('Unsupported partitioning strategy')
     else:
-        raise NotImplementedError('Unsupported partitioning strategy')
+        raise NotImplementedError('Argument strategy must be int or str')
 
     # Do the partitioning
     nominal_load = N // size
@@ -132,6 +137,28 @@ def partitionStations(data, comm=None, strategy='stations'):
     sendcnts = comm.allgather(procN)
 
     return sendcnts
+
+
+def appendSeasonalDictionary(G, G_mod_ref, data):
+    """
+    Prepends seasonal temporal dictionary to an existing temporal dictionary. The 
+    seasonal dictionary is represented by modulating integrated B-splines for a template
+    of repeating B-splines.
+    """
+    import tsinsar as ts
+    npbspline = data.npbspline
+    G_seas = ts.Timefn([['PBSPLINES',[3],[npbspline],1.0]], data.trel)[0]
+
+    template = np.dot(G_seas, self.m_seas[jj,:])
+    # Normalize the template
+    mean_spline = np.mean(template)
+    fit_norm = template - mean_spline
+    template = fit_norm / (0.5*(fit_norm.max() - fit_norm.min()))
+    G_mod = G_mod_ref.copy()
+    for nn in range(nsplmod):
+        G_mod[:,nn] *= template
+    G = np.column_stack((G_mod, self.G))
+
    
 
 # end of file 

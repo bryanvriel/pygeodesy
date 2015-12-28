@@ -178,6 +178,9 @@ class TimeSeries:
         # Load the seasonal dictionary
         seas_dat = self._loadh5(h5file)
 
+        # Get the number of periodic B-splines
+        self.npbspline = seas_dat['npbspline']
+
         # Get the seasonal coefficients
         for statname, stat in self.statGen:
             seas_stat = seas_dat[statname]
