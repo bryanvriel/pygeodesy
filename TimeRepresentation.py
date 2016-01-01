@@ -16,7 +16,7 @@ class TimeRepresentation:
         self.rep = rep
         self.cutoff = cutoff
 
-        self._matrix = None
+        self._matrix = self._seas_matrix = None
         self.npar = None
 
         if self.rep is not None:
@@ -203,6 +203,16 @@ class TimeRepresentation:
         return
 
 
+    def setRegIndices(self, regF):
+        """
+        Use regularization values to set which indices will be regulated.
+        """
+        self.noreg_ind = (regF < 0.9).nonzero()[0]
+        self.reg_ind = (regF > 0.1).nonzero()[0]
+        self.cutoff = len(noreg_ind)
+        return
+
+
     def partitionMatrix(self, cutoff=None):
         """
         Partition the time representation matrix into non-reg and reg coefficients.
@@ -219,6 +229,43 @@ class TimeRepresentation:
         return
 
 
+    def getObs(self, index, statInd=0):
+        """
+        Get a slice of the time representation matrix at a given observation index.
+        """
+        # Make matrix if needed
+        if self._matrix is None and self.rep is not None:
+            self._rep2matrix()
+        # Get matrix slice
+        kmat = self._getMatrixObs(index)
+        # Get seasonal matrix slice
+        kseas = self._getSeasMatrixObs(index, statInd)
+        # Combine the two
+        return np.hstack((kseas, kmat))
+
+
+    def _getMatrixObs(self, index):
+        """
+        A hidden helper function to slice the representation matrix for a given
+        observation index. If no matrix exists, just returns an empty list.
+        """
+        if self._matrix is None and self.rep is None:
+            return []
+        else:
+            return self._matrix[index,:]
+
+    
+    def _getSeasMatrixObs(self, index, statInd):
+        """
+        A hidden helper function to slice the seasonal matrix for a given
+        observation index. If no matrix exists, just returns an empty list.
+        """
+        if self._seas_matrix is None:
+            return []
+        else:
+            return self._seas_matrix[index,:,statInd]
+
+
     def _rep2matrix(self):
         """
         Convert the string representation to a numpy array
@@ -226,7 +273,7 @@ class TimeRepresentation:
         # Use Timefn to get matrix
         self._matrix, mName, regF = ts.Timefn(self.rep, self.t-self.t[0])
         # Determine indices for non-regularized variables
-        self.noreg_ind = (regF < 1.0).nonzero()[0]
+        self.noreg_ind = (regF < 0.9).nonzero()[0]
         # And indices for regularized variables
         self.reg_ind = (regF > 0.1).nonzero()[0]
         # Store number of parameters
@@ -245,7 +292,9 @@ class TimeRepresentation:
         return self._matrix
     @matrix.setter
     def matrix(self, mat):
-        raise NotImplementedError('Cannot set matrix explicitly')
+        print('Warning: setting TimeRepresentation.matrix explicitly')
+        self._matrix = mat
+        return
 
 
     @property
@@ -262,6 +311,14 @@ class TimeRepresentation:
     @matrixReg.setter
     def matrixReg(self, mat):
         raise NotImplementedError('Cannot set matrix explicitly')
+
+
+    @property
+    def trel(self):
+        return self.t - self.t[0]
+    @trel.setter
+    def trel(self, val):
+        raise NotImplementedError('Cannot set trel explicitly')
 
 
 def makeRepresentation(tdec, rank, splineOrder=3, secular=False, maxspl=2048):

@@ -250,7 +250,7 @@ class TimeSeries:
         return
            
 
-    def getDataArrays(self, order='columns', h5=True):
+    def getDataArrays(self, order='columns', h5=True, components=None):
         """
         Traverses the station dictionary to construct regular sized arrays for the
         data and weights.
@@ -263,8 +263,12 @@ class TimeSeries:
             ndat = dat.size
             break 
 
+        # Get components to process
+        comps = components or self.components
+        ncomp = len(comps)
+
         # Construct regular arrays
-        nobs = self.nstat * self.ncomp
+        nobs = self.nstat * ncomp
         if self.have_seasonal:
             seas_coeffs = np.empty((self.npar_seasonal, nobs))
         data = np.empty((ndat, nobs))
@@ -272,7 +276,7 @@ class TimeSeries:
 
         # Fill them
         j = 0
-        for component in self.components:
+        for component in comps:
             for statname, stat in self.statGen:
                 compDat = self.getData(stat, component)
                 compWeight = self.getData(stat, 'w_' + component)
@@ -297,7 +301,13 @@ class TimeSeries:
         """
         import topoutil as tu
 
+        # Check station ordering is consistent
+        names = [name for name, stat in self.statGen]
+        assert names == self.name.tolist(), 'Inconsistent station name list w/ statGen.'
+
+        # Allocate array for storing weights
         dist_weight = np.zeros((self.nstat, self.nstat))
+
         # Loop over stations
         rad = np.pi / 180.0
         for i in range(self.nstat):

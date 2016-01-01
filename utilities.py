@@ -1,4 +1,5 @@
 
+from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
@@ -55,7 +56,7 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
         beg_ind = tbool.nonzero()[0][0]
         end_ind = beg_ind + ndays
         tbool = np.arange(beg_ind, end_ind, dtype=int)[::subfactor]
-    print(('Subset time window:', tobs[tbool][0], '->', tobs[tbool][-1]))
+    print('Subset time window:', tobs[tbool][0], '->', tobs[tbool][-1])
 
     # Subset data
     if not checkOnly:
