@@ -35,11 +35,20 @@ class GPS(TimeSeries):
         """
         Reads GPS data and convert to mm
         """
-        #raise NotImplementedError('Deprecated read_data method')
         self.stns = []
+        lon = []; lat = []; elev = []; name = []
         for ii in range(self.nstat):
-            self.stns.append(STN(self.name[ii], gpsdir, format=self.datformat,
-                                 fileKernel=fileKernel, dataFactor=dataFactor))
+            stn = STN(self.name[ii], gpsdir, format=self.datformat,
+                fileKernel=fileKernel, dataFactor=dataFactor)
+            if stn.success:
+                self.stns.append(stn)
+                lon.append(self.lon[ii])
+                lat.append(self.lat[ii])
+                elev.append(self.elev[ii])
+                name.append(self.name[ii])
+        for key, value in (('lon', lon), ('lat', lat), ('elev', elev), ('name', name)):
+            setattr(self, key, value)
+        self.nstat = len(name)
         return
 
 

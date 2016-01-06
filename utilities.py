@@ -40,7 +40,7 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
     Subsets GPS data based on a window of observation times.
     """
     # First check if a list of stations to keep is provided
-    statnames = list(inputDict.keys())
+    statnames = [name for name in inputDict.keys() if name not in ['tdec', 'G', 'cutoff']]
     if statlist is not None:
         for statname in statnames:
             if statname.lower() not in statlist:
