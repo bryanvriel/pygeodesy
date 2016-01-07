@@ -7,7 +7,6 @@ import shutil
 import h5py
 
 
-
 class TimeSeries:
     """
     Abstract class for all time series data objects.
@@ -43,6 +42,7 @@ class TimeSeries:
 
         self.h5file = self.output_h5file = self.statGen = None
         self.have_seasonal = False
+        self.nstat = 0
 
         return
 

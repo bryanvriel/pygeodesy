@@ -2,6 +2,7 @@
 
 import numpy as np
 import tsinsar as ts
+from io import BytesIO
 import os
 
 class STN:
@@ -10,7 +11,7 @@ class STN:
     """
 
     def __init__(self, stname, gpsdir, format='sopac', txtreader=None,
-                 fileKernel='CleanFlt', dataFactor=1000.0):
+                 fileKernel='CleanFlt', dataFactor=1000.0, getcoords=False):
         """
         Initialization of single GPS station. Read in data according to a specified format. If
         'format' is not 'sopac' or 'pbo', must provide a txtreader function that stores time in 
@@ -20,8 +21,11 @@ class STN:
         if 'sopac' in format:
             fname = '%s/%s.neu' % (gpsdir, stname + fileKernel)
             if os.path.isfile(fname):
-                [ddec,yr,day,north,east,up,dnor,deas,dup] = ts.tsio.textread(fname,
-                        'F I I F F F F F F')
+                print(fname)
+                #[ddec,yr,day,north,east,up,dnor,deas,dup] = ts.tsio.textread(fname,
+                #        'F I I F F F F F F')
+                ddec,yr,day,north,east,up,dnor,deas,dup = np.genfromtxt(fname, unpack=True,
+                    delimiter=[9,5,4,8,8,8,8,8,8])
                 self.fname = fname
                 self.tdec = ddec
                 self.north = north * dataFactor
@@ -30,6 +34,24 @@ class STN:
                 self.sn = (dnor * dataFactor)**2
                 self.se = (deas * dataFactor)**2
                 self.su = (dup * dataFactor)**2
+                # Optionally read coordinates from header
+                if getcoords:
+                    factors = {'N': 1.0, 'E': 1.0, 'W': -1.0, 'S': -1.0}
+                    with open(fname, 'r') as fid:
+                        for line in fid:
+                            if not line.startswith('#'):
+                                break
+                            if 'Reference position' in line:
+                                subline = line.split(':')[1][:-5]
+                                dat = subline.split()
+                                lat_fact = factors[dat[0][0]]
+                                lon_fact = factors[dat[3][0]]
+                                self.lat = lat_fact*(float(dat[0][1:]) + float(dat[1])/60.0
+                                    + float(dat[2])/3600.0)
+                                self.lon = lon_fact*(float(dat[3][1:]) + float(dat[4])/60.0
+                                    + float(dat[5])/3600.0)
+                                self.elev = float(dat[6])
+                                break
             else:
                 self.success = False
 

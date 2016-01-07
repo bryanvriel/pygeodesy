@@ -37,15 +37,35 @@ class GPS(TimeSeries):
         """
         self.stns = []
         lon = []; lat = []; elev = []; name = []
-        for ii in range(self.nstat):
-            stn = STN(self.name[ii], gpsdir, format=self.datformat,
-                fileKernel=fileKernel, dataFactor=dataFactor)
-            if stn.success:
-                self.stns.append(stn)
-                lon.append(self.lon[ii])
-                lat.append(self.lat[ii])
-                elev.append(self.elev[ii])
-                name.append(self.name[ii])
+        # If the list of stations/coordinates have already been set, loop over them
+        if self.nstat > 0:
+            for ii in range(self.nstat):
+                stn = STN(self.name[ii], gpsdir, format=self.datformat,
+                    fileKernel=fileKernel, dataFactor=dataFactor)
+                if stn.success:
+                    self.stns.append(stn)
+                    lon.append(self.lon[ii])
+                    lat.append(self.lat[ii])
+                    elev.append(self.elev[ii])
+                    name.append(self.name[ii])
+
+        # If not, we loop over the files listed in gpsdir, and pull the coordinates
+        # from the header
+        else:
+            for root, dirs, files in os.walk(gpsdir):
+                for fname in files:
+                    if fileKernel not in fname:
+                        continue
+                    statname = fname[:4].lower()
+                    stn = STN(statname, gpsdir, format=self.datformat,
+                        fileKernel=fileKernel, dataFactor=dataFactor, getcoords=True)
+                    self.stns.append(stn)
+                    lon.append(stn.lon)
+                    lat.append(stn.lat)
+                    elev.append(stn.elev)
+                    name.append(statname)
+                   
+        # Save coordinates and names to self 
         for key, value in (('lon', lon), ('lat', lat), ('elev', elev), ('name', name)):
             setattr(self, key, value)
         self.nstat = len(name)
