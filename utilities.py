@@ -14,7 +14,7 @@ def subsetDataWithPoly(inputDict, points, h5=True):
     poly = Path(points)
 
     # Figure out which stations lie inside the polygon
-    keepstat = ['tdec', 'G', 'cutoff']
+    keepstat = ['tdec', 'G', 'cutoff', 'npbspline']
     for statname, stat in inputDict.items():
         if statname in ['tdec', 'G', 'cutoff']:
             continue
@@ -40,7 +40,8 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
     Subsets GPS data based on a window of observation times.
     """
     # First check if a list of stations to keep is provided
-    statnames = [name for name in inputDict.keys() if name not in ['tdec', 'G', 'cutoff']]
+    statnames = [name for name in inputDict.keys() if name not in 
+        ['tdec', 'G', 'cutoff', 'npbspline']]
     if statlist is not None:
         for statname in statnames:
             if statname.lower() not in statlist:

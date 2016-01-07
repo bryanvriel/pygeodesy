@@ -3,6 +3,7 @@
 from __future__ import print_function
 import numpy as np
 import tsinsar as ts
+import copy
 
 
 class TimeRepresentation:

@@ -234,7 +234,7 @@ class TimeSeries:
         Make a generator for looping over the stations and station names.
         """
         self.statGen = list((statname, stat) for (statname, stat) in self.statDict.items()
-            if statname not in ['tdec', 'G', 'cutoff'])
+            if statname not in ['tdec', 'G', 'cutoff', 'npbspline'])
         return
 
 
