@@ -240,6 +240,7 @@ class TimeSeries:
         """
         self.statGen = list((statname, stat) for (statname, stat) in self.statDict.items()
             if statname not in ['tdec', 'G', 'cutoff', 'npbspline', 'dtype'])
+        self.nstat = len(self.statGen)
         return
 
 
