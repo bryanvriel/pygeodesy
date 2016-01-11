@@ -9,4 +9,4 @@ from .TimeRepresentation import *
 from .MPISolver import MPISolver
 from .SequentialSolver import SequentialSolver
 from . import utilities
-
+from .Wells import Wells

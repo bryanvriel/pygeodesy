@@ -6,6 +6,9 @@ import tsinsar as ts
 import shutil
 import h5py
 
+from timeutils import generateRegularTimeArray
+from scipy.spatial import cKDTree
+
 
 class TimeSeries:
     """
@@ -36,6 +39,8 @@ class TimeSeries:
             self.components = ['east', 'north', 'up']
         elif self.dtype.lower() in ['edm', 'insar']:
             self.components = ['los']
+        elif self.dtype.lower() in ['wells']:
+            self.components = ['up']
         else:
             assert False, 'Unsupported data type. Must be gps, edm, or insar'
         self.ncomp = len(self.components)
@@ -234,7 +239,7 @@ class TimeSeries:
         Make a generator for looping over the stations and station names.
         """
         self.statGen = list((statname, stat) for (statname, stat) in self.statDict.items()
-            if statname not in ['tdec', 'G', 'cutoff', 'npbspline'])
+            if statname not in ['tdec', 'G', 'cutoff', 'npbspline', 'dtype'])
         return
 
 
@@ -247,6 +252,68 @@ class TimeSeries:
             for component in self.components:
                 dat = getattr(self, component)
                 dat -= nanmean(dat)
+        return
+
+
+    def resample(self, interp=False, t0=None, tf=None):
+        """
+        Resample data to a common time array.
+        """
+        print('Resampling data')
+        # Loop through stations to find bounding times
+        tmin = 1000.0
+        tmax = 3000.0
+        for statname, stat in self.statGen:
+            tmin_cur = stat['tdec'].min()
+            tmax_cur = stat['tdec'].max()
+            if tmin_cur > tmin:
+                tmin = tmin_cur
+            if tmax_cur < tmax:
+                tmax = tmax_cur
+
+        refflag = False
+        if t0 is not None and tf is not None:
+            refflag = True
+            tref = generateRegularTimeArray(t0, tf)
+            days = tref.size
+            tree = cKDTree(tref.reshape((days,1)), leafsize=2*days)
+        else:
+            tref = generateRegularTimeArray(tmin, tmax)
+            days = tref.size
+
+        # Retrieve data that lies within the common window
+        for statname, stat in self.statGen:
+            tdec = stat['tdec']
+            # List of attributes to loop over
+            components = self.components + ['w_' + comp for comp in self.components]
+            for comp in components:
+                # Get raw data
+                raw_dat = np.array(stat[comp])
+                # Resample using linear interpolation
+                if interp:
+                    resamp_dat = np.interp(tref, tdec, raw_dat)
+                # Or nearest neighbor
+                elif t0 is not None and tf is not None:
+                    resamp_dat = np.nan * np.ones_like(tref)
+                    for i in range(tdec.size):
+                        if tdec[i] < t0 or tdec[i] > tf:
+                            continue
+                        nndist, ind = tree.query(np.array([tdec[i]]), k=1, eps=1.0)
+                        resamp_dat[ind] = raw_dat[i]
+                # Or just getting a window
+                else:
+                    ind = (tdec >= tmin) & (tdec <= tmax)
+                    resamp_dat = raw_dat[ind]
+                # Save
+                stat[comp] = resamp_dat
+            del stat['tdec']
+
+        # Save reference array
+        self.statDict['tdec'] = tref
+        self.tdec = tref
+        # Finally, reset the h5file property
+        self.h5file = self.statDict
+
         return
            
 

@@ -5,6 +5,27 @@ import matplotlib.pyplot as plt
 from matplotlib.path import Path
 
 
+def selectDataClass(h5file):
+    """
+    Utility function to read in a stack file, get its data type, and return
+    an instance of the appropriate class. If no data dtype is found in the 
+    stack file, we assume GPS data.
+    """
+    import h5py
+    with h5py.File(h5file, 'r') as fid:
+        print(list(fid.keys()))
+        try:
+            stype = fid['dtype'].value
+            if stype == 'wells':
+                from .Wells import Wells
+                data = Wells()
+        except KeyError:
+            from .GPS import GPS
+            data = GPS()
+
+    return data
+
+
 def subsetDataWithPoly(inputDict, points, h5=True):
     """
     Subset GPS stations within a polynomial.
@@ -41,12 +62,13 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
     """
     # First check if a list of stations to keep is provided
     statnames = [name for name in inputDict.keys() if name not in 
-        ['tdec', 'G', 'cutoff', 'npbspline']]
+        ['tdec', 'G', 'cutoff', 'npbspline', 'dtype']]
     if statlist is not None:
         for statname in statnames:
             if statname.lower() not in statlist:
                 del inputDict[statname]
-    statnames = list(inputDict.keys())
+    statnames = [name for name in inputDict.keys() if name not in 
+        ['tdec', 'G', 'cutoff', 'npbspline', 'dtype']]
 
     # Boolean array of valid observation times
     tbool = tobs >= t0
@@ -68,7 +90,7 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
         if statname == 'tdec': continue
         # Test to see if station has enough valid data
         if h5:
-            dat = np.array(stat['east'])
+            dat = np.array(stat['up'])
         else:
             dat = stat.east
         indValid = np.isfinite(dat[tbool]).nonzero()[0]
