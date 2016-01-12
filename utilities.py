@@ -13,12 +13,14 @@ def selectDataClass(h5file):
     """
     import h5py
     with h5py.File(h5file, 'r') as fid:
-        print(list(fid.keys()))
         try:
             stype = fid['dtype'].value
             if stype == 'wells':
                 from .Wells import Wells
                 data = Wells()
+            elif stype == 'gps':
+                from .GPS import GPS
+                data = GPS()
         except KeyError:
             from .GPS import GPS
             data = GPS()

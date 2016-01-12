@@ -244,6 +244,65 @@ class TimeSeries:
         return
 
 
+    def combine_data(self, filename):
+        """
+        Combine data from multiple stations. First chronological station is the reference one.
+        """
+        delete_stat = []
+        with open(filename, 'r') as fid:
+            # Loop over lines in file
+            for line in fid:
+
+                # Read the statnames
+                statnames = [name.lower().strip() for name in line.split(',')]
+                # Sort the stations by earliest finite data
+                starting_indices = []
+                for name in statnames:
+                    data = self.statDict[name][self.components[0]]
+                    starting_indices.append(np.isfinite(data).nonzero()[0][0])
+                statnames = [statnames[ind] for ind in np.argsort(starting_indices)]
+                ref_name = statnames[0]
+
+                # Loop over the components
+                for comp in self.components:
+                    # Starting time representation is linear polynomial
+                    rep = [['POLY',[1],[0.0]]]
+                    # Get reference array to store everything
+                    data = self.statDict[ref_name][comp]
+                    wgt = self.statDict[ref_name]['w_' + comp]
+                    for current_name in statnames[1:]:
+                        # Get current array
+                        current_data = self.statDict[current_name][comp]
+                        current_wgt = self.statDict[current_name]['w_' + comp]
+                        ind = np.isfinite(current_data).nonzero()[0]
+                        # Store the data and weights
+                        data[ind[0]:] = current_data[ind[0]:]
+                        wgt[ind[0]:] = current_wgt[ind[0]:]
+                        # Add heaviside
+                        rep.append(['STEP',[self.trel[ind[0]]]])
+
+                    # Remove ambiguities for any non-vertical components
+                    if comp != 'up':
+                        # Do least squares on finite data
+                        ind = np.isfinite(data)
+                        G = ts.Timefn(rep, self.trel)[0]
+                        m = np.linalg.lstsq(G[ind,:], data[ind])[0]
+                        # Remove only heaviside parts
+                        data -= np.dot(G[:,2:], m[2:])
+
+                # Remember the stations to delete
+                delete_stat.extend(statnames[1:])
+                
+        # Delete redundant stations
+        for name in delete_stat:
+            del self.statDict[name]
+                    
+        # Some cleanup: remake the station generator
+        self.makeStatGen() 
+        self.transferDictInfo()
+        return 
+
+
     def zeroMeanDisplacements(self):
         """
         Remove the mean of the finite values in each component of displacement.
