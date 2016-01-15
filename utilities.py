@@ -21,6 +21,9 @@ def selectDataClass(h5file):
             elif stype == 'gps':
                 from .GPS import GPS
                 data = GPS()
+            elif stype == 'insar':
+                from .Insar import Insar
+                data = Insar()
         except KeyError:
             from .GPS import GPS
             data = GPS()

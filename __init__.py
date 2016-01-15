@@ -10,3 +10,7 @@ from .MPISolver import MPISolver
 from .SequentialSolver import SequentialSolver
 from . import utilities
 from .Wells import Wells
+from .Insar import Insar
+from .StationGenerator import StationGenerator
+
+# end of file
