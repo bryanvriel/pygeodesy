@@ -1,5 +1,7 @@
 #-*- coding: utf-8 -*-
 
+import numpy as np
+
 
 class StationGenerator:
     """
@@ -18,11 +20,18 @@ class StationGenerator:
             3D array of shape (Nifg,Ny,Nx) corresponding to inverse of InSAR 
             uncertainties.
         """
+        # Save arrays if provided
         self.los = los
         self.w_los = w_los
         self.lat = lat
         self.lon = lon
         self.elev = elev
+        
+        # Construct meshgrid of pixel coordinates
+        self.Nifg, self.Ny, self.Nx = los.shape
+        J, I = np.meshgrid(np.arange(self.Nx, dtype=int), np.arange(self.Ny, dtype=int))
+        self.pixel_coordinates = zip(I.flatten(), J.flatten())
+
         return
 
 
@@ -40,13 +49,28 @@ class StationGenerator:
         d: dict
             dict containing 'los', 'w_los', 'lon', 'lat', and 'elev' keys.
         """
-        # Get pixel coordinates
-        i,j = [int(val) for val in key.split('-')]
-        # Return full dictionary
-        outdict = {}
-        for attr in ('los', 'w_los', 'lon', 'lat', 'elev'):
-            outdict[attr] = getattr(self, attr)[...,i,j]
-        return outdict
+        if isinstance(key, slice):
+            # Loop over the coordinates
+            for index in range(key.start, key.stop, 1 or key.step):
+                i,j = np.unravel_index(index, (self.Ny,self.Nx))
+                # Contstruct output dictionary for pixel
+                outdict = {}
+                for attr in ('los', 'w_los', 'lon', 'lat', 'elev'):
+                    outdict[attr] = getattr(self, attr)[...,i,j]
+                # Yield it
+                yield ('%04d-%04d' % (i,j), outdict)
+
+        else:
+            # Get single pixel coordinates
+            if isinstance(key, str):
+                i,j = [int(val) for val in key.split('-')]
+            elif isinstance(key, int):
+                i,j = np.unravel_index(key, (self.Ny,self.Nx))
+            # Return single dictionary
+            outdict = {}
+            for attr in ('los', 'w_los', 'lon', 'lat', 'elev'):
+                outdict[attr] = getattr(self, attr)[...,i,j]
+            return outdict
 
 
     def __setitem__(self, key, value_dict):
@@ -64,8 +88,20 @@ class StationGenerator:
         i,j = [int(val) for val in key.split('-')]
         # Loop over dict items and set attribute
         for attr, value in value_dict.items():
-            arr = getattr(self, attr)
-            arr[...,i,j] = value
+            if hasattr:
+                arr = getattr(self, attr)
+                arr[...,i,j] = value
+            else:
+                # If new array, initialize array to store
+                if isinstance(value, np.ndarray):
+                    N = len(value)
+                    arr = np.zeros((N,self.Ny,self.Nx), dtype=np.float32)
+                    arr[:,i,j] = value
+                    setattr(self, attr, arr)
+                # Else, just save the value as a new attribute
+                else:
+                    setattr(self, attr, value)
+
         return
     
 
