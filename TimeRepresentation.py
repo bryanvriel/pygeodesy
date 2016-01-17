@@ -11,7 +11,7 @@ class TimeRepresentation:
     Class for parameterizing temporal evolution functions.
     """
 
-    def __init__(self, t, rep=None, cutoff=None, G=None, rank=0):
+    def __init__(self, t, rep=None, cutoff=None, G=None, Jmat=None, rank=0):
 
         self.t = t
         self.rep = rep
@@ -31,6 +31,10 @@ class TimeRepresentation:
         if G is not None:
             self._matrix = G
             self.npar = G.shape[1]
+
+        self.Jmat = Jmat
+        if Jmat is not None:
+            self.nobs = Jmat.shape[0]
 
         self.repDict = None
         self.repKeys = []
@@ -99,6 +103,7 @@ class TimeRepresentation:
                 for value in values:
                     entry.append(value)
             rep.append(entry)
+        self.rep = rep
         return rep
 
 
@@ -339,6 +344,9 @@ class TimeRepresentation:
         """
         # Use Timefn to get matrix
         self._matrix, mName, regF = ts.Timefn(self.rep, self.t-self.t[0])
+        # Modulate by a connectivity matrix (for InSAR)
+        if self.Jmat is not None:
+            self._matrix = np.dot(self.Jmat, self._matrix)
         # Determine indices for non-regularized variables
         self.noreg_ind = (regF < 0.9).nonzero()[0]
         # And indices for regularized variables

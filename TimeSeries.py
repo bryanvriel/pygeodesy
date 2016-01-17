@@ -47,7 +47,9 @@ class TimeSeries:
 
         self.h5file = self.output_h5file = self.statGen = None
         self.have_seasonal = False
+        self.seasonal_fid = None
         self.nstat = 0
+        self.Jmat = None
 
         return
 
@@ -88,6 +90,8 @@ class TimeSeries:
         elif type(self.h5file) is dict and self.output_h5file is not None:
             print('Finished processing. Saving H5 file')
             self._saveh5(self.output_h5file, self.h5file)
+        if self.seasonal_fid is not None:
+            self.seasonal_fid.close()
         return
 
 
