@@ -11,6 +11,7 @@ from .SequentialSolver import SequentialSolver
 from . import utilities
 from .Wells import Wells
 from .Insar import Insar
+from .InsarSolver import InsarSolver
 from .StationGenerator import StationGenerator
 
 # end of file
