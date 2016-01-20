@@ -29,6 +29,9 @@ class Insar(TimeSeries):
         self.comm = comm or MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.n_workers = self.comm.Get_size()
+        # Dictionary mapping dtype to attribute
+        self.attr_dict = {'igram': '_igram', 'weight': '_weights',
+            'par': '_par', 'recon': '_recon'}
         return
 
 
@@ -39,6 +42,7 @@ class Insar(TimeSeries):
         self.clear()
 
         # Only master worker will have access to underlying data
+        self._par = None
         if self.rank == 0:
 
             # Open the H5 file and store access to igrams or time series and weights
@@ -68,6 +72,13 @@ class Insar(TimeSeries):
             self.chunk_shape = self.h5file['chunk_shape'].value
             self.data_shape = self._data.shape
 
+            # Also try to load parameters for inversion stacks
+            try:
+                self._par = self.h5file['par']
+                self.npar = self._par.shape[0]
+            except KeyError:
+                pass
+            
         else:
             self.tdec = self.Jmat = self.chunk_shape = self.data_shape = None
 
@@ -152,6 +163,35 @@ class Insar(TimeSeries):
         return
 
 
+    def initializeDataset(self, attr, N, chunk_size=None, access_mode='w'):
+        """
+        Create a new 3D array for saved H5 file.
+
+        Parameters
+        ----------
+        attr: str
+            String for H5 key.
+        N: int
+            Leading dimension for array (N,self.Ny,self.Nx).
+        chunk_size: {None, int}, optional
+            Chunk size. Defaults to saved chunk_size.
+        """
+        # Determine chunk shape
+        if chunk_size is None:
+            chunk_size = self.chunk_shape[0]
+        h5_chunk_shape = (1,chunk_size,chunk_size)
+
+        # Make new H5 Dataset and save
+        if self.rank == 0:
+            new_dset = self.h5file.create_dataset(attr, shape=(N,self.Ny,self.Nx),
+                dtype=np.float32, chunks=h5_chunk_shape)
+        else:
+            new_dset = None
+        setattr(self, '_%s' % attr, new_dset)
+
+        return
+
+
     def getChunk(self, slice_y, slice_x, dtype='igram'):
         """
         Loads H5 data for a specified chunk given by slice objects.
@@ -179,13 +219,9 @@ class Insar(TimeSeries):
         x: ndarray
             Array of data corresponding to specified chunk.
         """
-        # Dictionary mapping dtype to attribute
-        attr_dict = {'igram': '_igram', 'weight': '_weights',
-            'par': '_par', 'recon': '_recon'}
-
         # Load data
         if self.rank == 0:
-            arr = getattr(self, attr_dict[dtype])
+            arr = getattr(self, self.attr_dict[dtype])
             x = arr[:,slice_y,slice_x]
             x_shape = x.shape
         else:
@@ -226,16 +262,44 @@ class Insar(TimeSeries):
         verbose: bool, optional
             Print some statement. Default: False.
         """
-        # Dictionary mapping dtype to attribute
-        attr_dict = {'igram': '_igram', 'weight': '_weights',
-            'par': '_par', 'recon': '_recon'}
-
-        # Save data
         if self.rank == 0:
             if verbose: print('Saving chunk', (slice_y, slice_x))
-            arr = getattr(self, attr_dict[dtype])
+            arr = getattr(self, self.attr_dict[dtype])
             arr[:,slice_y,slice_x] = dat
         return 
+
+
+    def getMeanSlice(self, dtype='igram'):
+        """
+        Compute nanmean of 3D data along the time axis. See Insar.getChunk
+        for supported 'dtype' strings.
+        """
+        mean_slice = None
+        if self.rank == 0:
+            data = getattr(self, self.attr_dict[dtype])
+            mean_slice = np.nanmean(data, axis=0)
+        return mean_slice 
+
+
+    def getSlice(self, index, dtype='igram'):
+        """
+        Get LOS displacement for a given time index.
+
+        Parameters
+        ----------
+        index: int
+            Time index to extract slice.
+
+        Returns
+        -------
+        x: ndarray
+            Extracted slice array.
+        """
+        kslice = None
+        if self.rank == 0:
+            data = getattr(self, self.attr_dict[dtype])
+            kslice = np.array(data[index,:,:])
+        return kslice
 
         
     def loadSeasonalH5(self, h5file):

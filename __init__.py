@@ -13,5 +13,6 @@ from .Wells import Wells
 from .Insar import Insar
 from .InsarSolver import InsarSolver
 from .StationGenerator import StationGenerator
+from .Model import Model
 
 # end of file

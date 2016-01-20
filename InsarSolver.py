@@ -3,6 +3,7 @@
 import numpy as np
 from mpi4py import MPI
 import pickle
+import time as pytime
 import h5py
 import copy
 import sys
@@ -18,7 +19,7 @@ class InsarSolver:
     Use mpi4py to do time series inversion in parallel.
     """
 
-    def __init__(self, data, rep, comm=None, solver_type='lsqr'):
+    def __init__(self, data, model, comm=None, solver_type='lsqr'):
         """
         Initiate InsarSolver class.
 
@@ -26,8 +27,8 @@ class InsarSolver:
         ----------
         data: Insar
             Insar instance containing InSAR data.
-        rep: TimeRepresentation
-            TimeRepresentation instance.
+        model: Model
+            Model instance containing the time series model.
         comm: None or MPI.Comm, optional
             MPI communicator. Default: None
         solver_type: str {'lasso'}, optional
@@ -50,13 +51,7 @@ class InsarSolver:
 
         # Save the data and rep objects
         self.data = data
-        self.rep = rep
-
-        # Construct a G matrix for inversion
-        self.H = rep.matrix
-        self.G = np.dot(data.Jmat, self.H)
-        self.npar = self.H.shape[1]
-        self.nrecon = self.H.shape[0]
+        self.model = model
 
         # Save the solver type
         self.solver_type = solver_type
@@ -66,7 +61,7 @@ class InsarSolver:
         return
 
 
-    def solve(self, chunks, result):
+    def solve(self, chunks, resultDict, l2=1.0):
         """
         Invert the time series chunk by chunk.
 
@@ -74,27 +69,36 @@ class InsarSolver:
         ---------
         chunks: list
             List of chunk slices.
-        result: Insar
-            Insar object to store output.
+        resultDict: dict
+            Dictionary of {funcString: dataObj} pairs where funcString is a str
+            in ['full', 'secular', 'seasonal', 'transient'] specifying which
+            functional form to reconstruct, and dataObj is an Insar object to
+            with an appropriate H5 file to store the reconstruction.
+        l2: float, optional
+            L2-regularization penalty.
         """
 
         # Instantiate a solver
         if self.solver_type == 'lasso':
             solver = MintsOpt(0.0, 0.0, 0.0, cutoff=self.cutoff, maxiter=1,
                 weightingMethod=weightingMethod)
+        elif self.solver_type == 'ridge':
+            solver = RidgeRegression(self.model.reg_indices, l2)
         elif self.solver_type == 'lsqr':
             solver = LSQR()
 
         # Workers won't be storing global arrays
         if self.rank != 0:
-            fit_global = None
+            m_global = None
 
-        # Initialize a row data type for MPI Gathering
-        row_type = MPI.FLOAT.Create_contiguous(self.nrecon)
-        row_type.Commit()
+        # Initialize row data types for MPI Gathering
+        par_rowtype = MPI.FLOAT.Create_contiguous(self.model.npar)
+        par_rowtype.Commit()
 
         # Loop over the chunks
         for chunk in chunks:
+
+            t0 = pytime.time()
 
             # Get the data chunks, which are now numpy arrays
             d = self.data.getChunk(chunk[0], chunk[1], dtype='igram')
@@ -117,7 +121,10 @@ class InsarSolver:
             sendcnts = self.comm.gather(procN, root=0)
 
             # Allocate array for local chunk results
-            fit = np.zeros((procN,self.nrecon), dtype=np.float32)
+            m = np.zeros((procN,self.model.npar), dtype=np.float32)
+            # And master allocates array for global results
+            if self.rank == 0:
+                m_global = np.zeros((npix,self.model.npar), dtype=np.float32)
 
             # Loop over my portion of the data
             for cnt, i in enumerate(range(istart,iend)):
@@ -125,175 +132,26 @@ class InsarSolver:
                 dpix = d[i,:]
                 wpix = wgt[i,:]
                 ind = np.isfinite(dpix)
-                # Perform inversion
-                m = solver.invert(self.G[ind,:], dpix[ind], wgt=wpix[ind])
-                # Save reconstruction
-                fit[cnt,:] = np.dot(self.H, m)
+                # Perform inversion and save parameters
+                m[cnt,:], qwgt = solver.invert(self.model.G[ind,:], 
+                    dpix[ind], wgt=wpix[ind])
 
             # Gather the final results
+            self.comm.Gatherv(m, [m_global, (sendcnts, None), par_rowtype], root=0)
+            # Re-shape results to match chunk dimensions
             if self.rank == 0:
-                fit_global = np.zeros((npix,self.nrecon), dtype=np.float32)
-            self.comm.Gatherv(fit, [fit_global, (sendcnts, None), row_type], root=0)
+                m_global = np.swapaxes(m_global, 0, 1).reshape((self.model.npar,ny,nx))
 
-            # Re-shape it to match chunk dimensions
+            # Model class will perform the reconstruction and write data
+            self.model.predict(m_global, resultDict, chunk)
+            self.comm.Barrier()
             if self.rank == 0:
-                fit_global = np.swapaxes(fit_global, 0, 1).reshape((self.nrecon,ny,nx))
+                print('Finished chunk', chunk, 'in %f seconds' % (pytime.time() - t0))
 
-            # Save the results
-            result.setChunk(fit_global, chunk[0], chunk[1], dtype='recon', verbose=True)
-
-        row_type.Free()        
+        par_rowtype.Free()
         return
 
     
-    def reconstruct(self, H):
-        """
-        Reconstruct time series for every pixel.
-        """
-        # Loop over my pixels
-        self.cutoff = 0
-        for jj in range(self.procN):
-            self.recons[jj,:] = np.dot(H[:,self.cutoff:], self.m[jj,self.cutoff:])
-
-        # Master gathers the reconstruction from all workers
-        self.comm.Gatherv(self.recons, [self.recons0, (self.sendcnts, None),
-                          self.recons_rowtype], root=0)
-        self.recons_rowtype.Free()
-
-        # Put the reconstruction back into the original geometry
-        if self.rank == 0:
-            npixel_ref = len(self.line_status)
-            recons0 = np.zeros((npixel_ref,self.ntims), dtype=self.recons0.dtype)
-            m0 = np.zeros((npixel_ref,self.npar), dtype=self.m0.dtype)
-
-            recons0[self.line_status,:] = self.recons0
-            m0[self.line_status,:] = self.m0
-            self.recons0 = recons0
-            self.m0 = m0
-
-        return
-
-
-    def invertModulated(self, insar_wgts, seas_rep, tdec, nsplmod, maxiter=1, 
-        weightingMethod='log', norm_tol=1.0e-4):
-
-        # Instantiate a solver
-        if self.solver_type == 'sparse':
-            objSolver = self.solverClass(0.0, 0.0, 0.0, cutoff=self.cutoff, maxiter=1,
-                weightingMethod=weightingMethod)
-        elif self.solver_type == 'simple':
-            objSolver = self.solverClass(self.refPenalty)
-        else:
-            assert False
-
-        # Reference seasonal template dictionary
-        H_seas = ts.Timefn(seas_rep, tdec-tdec[0])[0]
-
-        # Make an amplitude modulator
-        rep = [['ISPLINE',[3],[nsplmod]]]
-        H_mod_ref = ts.Timefn(rep, tdec-tdec[0])[0]
-
-        # Iterate
-        for ii in range(maxiter):
-
-            if self.rank == 0: print('At iteration', ii)
-
-            # Loop over my portion of the data
-            for jj in range(self.procN):
-
-                # Get boolean indices of valid observations and weights
-                dat = self.datArr[jj,:].copy()
-                ind = (np.abs(dat) < 1.0e6) * (np.abs(dat) > 1.0e-5)
-                nvalid = ind.nonzero()[0].size
-                if nvalid < 20:
-                    self.m[jj,:] = 1.0e8
-                    continue
-
-                # Form modulated seasonal + transient dictionary
-                template = np.dot(H_seas, self.m_seas[jj,:])
-                mean_spline = np.mean(template)
-                fit_norm = template - mean_spline
-                template = fit_norm / (0.5*(fit_norm.max() - fit_norm.min()))
-                H_mod = H_mod_ref.copy()
-                for nn in range(nsplmod):
-                    H_mod[:,nn] *= template
-                G = np.column_stack((np.dot(self.Jmat, H_mod), self.G))
-
-                # Perform inversion
-                Gsub, dat, wgt = G[ind,:], dat[ind], insar_wgts[ind]
-                λ = self.λ[jj,self.cutoff:].copy()
-                self.m[jj,:], q = objSolver.invert(dmultl(wgt,Gsub), wgt*dat, λ)
-                self.λ[jj,self.cutoff:] = q
-
-            # Master gathers the results for this iteration
-            self.comm.Gatherv(self.m, [self.m0, (self.sendcnts, None), self.par_rowtype], root=0)
-            self.comm.Gatherv(self.λ, [self.λ0, (self.sendcnts, None), self.par_rowtype], root=0)
-
-            # Broadcast the global penalties so every worker has a copy
-            self.comm.Bcast([self.λ0, MPI.DOUBLE], root=0)
-
-            # Compute weights and re-gather
-            if self.solver_type == 'sparse':
-                if self.rank == 0: print(' - updating weights')
-                self.updateWeights(self.λ0)
-
-        # Remove any invalid values
-        if self.rank == 0:
-            self.m0[self.m0 > 1.0e6] = np.nan
-
-        self.par_rowtype.Free()        
-        return
-
-    
-    def reconstructModulated(self, H_ref, seas_rep, tdec, nsplmod):
-        """
-        Reconstruct time series for every pixel.
-        """
-
-        # Reference seasonal template dictionary
-        H_seas = ts.Timefn(seas_rep, tdec-tdec[0])[0]
-
-        # Make an amplitude modulator
-        rep = [['ISPLINE',[3],[nsplmod]]]
-        H_mod_ref = ts.Timefn(rep, tdec-tdec[0])[0]
-
-        # Loop over my pixels
-        self.cutoff = 0
-        for jj in range(self.procN):
-
-            # Form modulated seasonal + transient dictionary
-            template = np.dot(H_seas, self.m_seas[jj,:])
-            mean_spline = np.mean(template)
-            fit_norm = template - mean_spline
-            template = fit_norm / (0.5*(fit_norm.max() - fit_norm.min()))
-            H_mod = H_mod_ref.copy()
-            for nn in range(nsplmod):
-                H_mod[:,nn] *= template
-            H = np.column_stack((H_mod, H_ref))
-
-            # Mulitply
-            self.recons[jj,:] = np.dot(H, self.m[jj,:])
-
-        # Master gathers the reconstruction from all workers
-        self.comm.Gatherv(self.recons, [self.recons0, (self.sendcnts, None),
-                          self.recons_rowtype], root=0)
-        self.recons_rowtype.Free()
-
-        # Put the reconstruction back into the original geometry
-        if self.rank == 0:
-            npixel_ref = len(self.line_status)
-            recons0 = np.zeros((npixel_ref,self.ntims), dtype=self.recons0.dtype)
-            m0 = np.zeros((npixel_ref,self.npar), dtype=self.m0.dtype)
-
-            recons0[self.line_status,:] = self.recons0
-            m0[self.line_status,:] = self.m0
-            self.recons0 = recons0
-            self.m0 = m0
-
-        return
-
-
-
     def updateWeights(self, λ0):
         """
         Update regularization penalties using distance between stations. Here, λ0 is
@@ -322,15 +180,22 @@ class InsarSolver:
 
 
 class RidgeRegression:
-    def __init__(self, refPenalty):
+    """
+    Simple ridge regression (L2-regularization on amplitudes).
+    """
+    def __init__(self, reg_indices, refPenalty):
+        self.reg_indices = reg_indices
         self.penalty = refPenalty
         return
-    def invert(self, G, d, dummy):
-        reg = np.eye(G.shape[1])
-        #reg[range(18,20),range(18,20)] = 0.0
-        reg[range(9),range(9)] = 0.0
-        GtG = np.dot(G.T, G) + self.penalty * reg
-        Gtd = np.dot(G.T, d)
+    def invert(self, G, d, wgt=None):
+        regMat = np.zeros((G.shape[1],G.shape[1]))
+        regMat[self.reg_indices,self.reg_indices] = self.penalty
+        if wgt is not None:
+            GtG = np.dot(G.T, ts.dmultl(wgt**2, G)) + regMat
+            Gtd = np.dot(G.T, wgt**2 * d)
+        else:
+            GtG = np.dot(G.T, G) + regMat
+            Gtd = np.dot(G.T, d)
         m = np.linalg.lstsq(GtG, Gtd)[0]
         return m, 0.0
 
@@ -344,7 +209,7 @@ class LSQR:
             m = np.linalg.lstsq(ts.dmultl(wgt, G), wgt*d)[0]
         else:
             m = np.linalg.lstsq(G, d)[0]
-        return m
+        return m, 0.0
 
 
 # end of file
