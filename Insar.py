@@ -89,6 +89,7 @@ class Insar(TimeSeries):
         self.data_shape = self.comm.bcast(self.data_shape, root=0)
         self.Ny, self.Nx = self.data_shape[1:]
         self.nstat = self.Ny * self.Nx
+        self.Nobs = self.data_shape[0] * self.Ny * self.Nx
 
         return
 
@@ -289,6 +290,8 @@ class Insar(TimeSeries):
         ----------
         index: int
             Time index to extract slice.
+        dtype: str, optional
+            Data set to extract from. Default: 'igram'.
 
         Returns
         -------
@@ -300,6 +303,31 @@ class Insar(TimeSeries):
             data = getattr(self, self.attr_dict[dtype])
             kslice = np.array(data[index,:,:])
         return kslice
+
+
+    def getPixel(self, row, col, dtype='igram'):
+        """
+        Get LOS displacement time series for a given pixel.
+
+        Parameters
+        ----------
+        row: int
+            Row index.
+        col: int
+            Column index.
+        dtype: str, optional
+            Data set to extract from. Default: 'igram'.
+
+        Returns
+        -------
+        d: ndarray
+            Extracted time series.
+        """
+        kts = None
+        if self.rank == 0:
+            data = getattr(self, self.attr_dict[dtype])
+            kts = np.array(data[:,row,col])
+        return kts
 
         
     def loadSeasonalH5(self, h5file):
@@ -316,6 +344,53 @@ class Insar(TimeSeries):
         # Remember that we have seasonal data
         self.have_seasonal = True
         return
+
+
+def getChunks(data, chunk_y, chunk_x):
+    """
+    Utility function to get chunk bounds.
+
+    Parameters
+    ----------
+    data: Insar
+        Insar instance.
+    chunk_y: int
+        Size of chunk in vertical dimension.
+    chunk_x: int
+        Size of chunk in horizontal dimension.
+
+    Returns
+    -------
+    chunks: list
+        List of all chunks in the image.
+    """
+    # First determine the number of chunks in each dimension
+    Ny_chunk = int(data.Ny // chunk_y)
+    Nx_chunk = int(data.Nx // chunk_x)
+    if data.Ny % chunk_y != 0:
+        Ny_chunk += 1
+    if data.Nx % chunk_x != 0:
+        Nx_chunk += 1
+
+    # Now construct chunk bounds
+    chunks = []
+    for i in range(Ny_chunk):
+        if i == Ny_chunk - 1:
+            nrows = data.Ny - chunk_y * i
+        else:
+            nrows = chunk_y
+        istart = chunk_y * i
+        iend = istart + nrows
+        for j in range(Nx_chunk):
+            if j == Nx_chunk - 1:
+                ncols = data.Nx - chunk_x * j
+            else:
+                ncols = chunk_x
+            jstart = chunk_x * j
+            jend = jstart + ncols
+            chunks.append([slice(istart,iend), slice(jstart,jend)])
+
+    return chunks
 
 
 # end of file

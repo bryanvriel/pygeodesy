@@ -151,6 +151,7 @@ class TimeRepresentation:
         self.nseasonal = len(seasonal)
         self.ntransient = len(transient)
         self.nstep = len(step)
+        self.nfull = self.npar
 
         if returnstep:
             return secular, seasonal, transient, step
