@@ -52,8 +52,7 @@ class TimeRepresentation:
         key = args[0]
 
         if self.repDict is None:
-            self.repDict = {
-        }
+            self.repDict = {}
         if nargs > 2:
             values = args[1:]
         else:
@@ -74,6 +73,28 @@ class TimeRepresentation:
         if key in self.repKeys:
             del self.repDict[key]
             self.repKeys.remove(key)
+        return
+
+
+    def fromlist(self, replist):
+        """
+        Transfer time rep info from GIAnT-compatible list to self.
+        """
+        self.repKeys = []
+        self.repDict = {}
+        modifier = 0
+        for entry in replist:
+            key = entry[0]
+            # Make sure key is unique
+            if key in self.repKeys:
+                key = '%s_%03d' % (key, modifier)
+                modifier += 1
+            # Add entry
+            self.repDict[key] = entry[1:]
+            self.repKeys.append(key)
+        self.rep = replist
+        self._rep2matrix()
+        self.npar = self._matrix.shape[1]
         return
 
 
@@ -111,6 +132,28 @@ class TimeRepresentation:
         return rep
 
 
+    def seasonalModulation(self, seasonalfile):
+        """
+        Open an Insar stack containing seasonal signals for every station/pixel. 
+        This will be used to create modulated seasonal matrix.
+        """
+        # First build the modulation design matrix
+        for key in self.repKeys:
+            values = self.repDict[key]
+            repType = key.upper()
+            if 'modulated' in key:
+                rep = [['ISPLINE', values]]
+                seas_matrix = ts.Timefn(rep, self.t)[0]
+                break
+
+        # Load an Insar stack for the seasonal data
+        comm = comm or MPI.COMM_WORLD
+        data = Insar(name='seasonal', comm=comm)
+
+        # Now form 3D modulated matrix
+
+
+
     def getFunctionalPartitions(self, returnstep=False):
         """
         Return the indices of the partitions.
@@ -138,6 +181,10 @@ class TimeRepresentation:
                 seasonal.extend([current, current+1, current+2, current+3])
                 current += 4
             elif 'pbspline' in key:
+                nspl = self.repDict[key.upper()][1][0]
+                seasonal.extend((current + np.arange(nspl, dtype=int)).tolist())
+                current += nspl
+            elif 'modulated' in key:
                 nspl = self.repDict[key.upper()][1][0]
                 seasonal.extend((current + np.arange(nspl, dtype=int)).tolist())
                 current += nspl
@@ -295,7 +342,7 @@ class TimeRepresentation:
         else:
             return self._seas_matrix[index,:,statInd]
 
-
+    
     def predict(self, x, ptype='all', in_nstat=None):
         """
         Makes predictions given a vector of coefficients. 'ptype' specifies the
@@ -359,6 +406,7 @@ class TimeRepresentation:
         """
         # Use Timefn to get matrix
         self._matrix, mName, regF = ts.Timefn(self.rep, self.t-self.t[0])
+        self.regF = regF
         # Modulate by a connectivity matrix (for InSAR)
         if self.Jmat is not None:
             self._matrix = np.dot(self.Jmat, self._matrix)
