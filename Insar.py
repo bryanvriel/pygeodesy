@@ -329,6 +329,43 @@ class Insar(TimeSeries):
             kts = np.array(data[:,row,col])
         return kts
 
+
+    def getData(self, dtype='igram'):
+        """
+        Get entire data array for a given dtype.
+
+        Parameters
+        ----------
+        dtype: str, optional
+            Data set to extract from. Default: 'igram'.
+        """
+        data_shape = data_type = None
+        # Master loads the data
+        if self.rank == 0:
+            data = getattr(self, self.attr_dict[dtype])
+            data = np.array(data)
+            data_shape = data.shape
+            data_type = data.dtype
+
+        # Broadcast the parameters
+        data_shape = self.comm.bcast(data_shape, root=0)
+        data_type = self.comm.bcast(data_type, root=0)
+        if self.rank != 0:
+            data = np.empty(data_shape, dtype=data_type)
+
+        # Use MPI to broadcast
+        if data_type == np.float64:
+            mpi_type = MPI.DOUBLE
+        elif data_type == np.float32:
+            mpi_type = MPI.FLOAT
+        elif data_type == np.int32:
+            mpi_type = MPI.INT
+        else:
+            assert False, 'Unhandled data type.'
+        self.comm.Bcast([data, mpi_type], root=0)
+
+        return
+
         
     def loadSeasonalH5(self, h5file):
         """
