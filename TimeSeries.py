@@ -479,8 +479,8 @@ class TimeSeries:
             if statname not in statnames:
                 continue
             for comp in self.components:
-                dat = stat[comp].value
-                wgt = stat['w_' + comp].value
+                dat = np.array(stat[comp])
+                wgt = np.array(stat['w_' + comp])
                 filtered = self.adaptiveMedianFilt(dat, kernel_size)
                 if mask:
                     ind = np.isnan(dat) * np.isnan(wgt)
