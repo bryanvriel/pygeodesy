@@ -282,7 +282,7 @@ class Insar(TimeSeries):
         return mean_slice 
 
 
-    def getSlice(self, index, dtype='igram'):
+    def getSlice(self, index, dtype='igram', bcast=False):
         """
         Get LOS displacement for a given time index.
 
@@ -298,10 +298,32 @@ class Insar(TimeSeries):
         x: ndarray
             Extracted slice array.
         """
-        kslice = None
+        kslice = slice_shape = slice_dtype = None
         if self.rank == 0:
             data = getattr(self, self.attr_dict[dtype])
             kslice = np.array(data[index,:,:])
+            slice_shape, slice_dtype = kslice.shape, kslice.dtype
+
+        if bcast:
+            # Allocate array for receiving data
+            slice_shape = self.comm.bcast(slice_shape, root=0)
+            slice_dtype = self.comm.bcast(slice_dtype, root=0)
+            if self.rank != 0:
+                kslice = np.empty(slice_shape, dtype=slice_dtype)
+
+            # Choose proper MPI type
+            if slice_dtype == np.float64:
+                mpi_type = MPI.DOUBLE
+            elif slice_dtype == np.float32:
+                mpi_type = MPI.FLOAT
+            elif slice_dtype == np.int32:
+                mpi_type = MPI.INT
+            else:
+                assert False, 'Unhandled data type.'
+
+            # Broadcast data
+            self.comm.Bcast([kslice, mpi_type], root=0)
+    
         return kslice
 
 
