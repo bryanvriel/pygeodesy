@@ -30,7 +30,7 @@ class Insar(TimeSeries):
         self.rank = self.comm.Get_rank()
         self.n_workers = self.comm.Get_size()
         # Dictionary mapping dtype to attribute
-        self.attr_dict = {'igram': '_igram', 'weight': '_weights',
+        self.attr_dict = {'igram': '_igram', 'weights': '_weights',
             'par': '_par', 'recon': '_recon'}
         return
 
@@ -364,7 +364,7 @@ class Insar(TimeSeries):
             assert False, 'Unhandled data type.'
         self.comm.Bcast([data, mpi_type], root=0)
 
-        return
+        return data
 
         
     def loadSeasonalH5(self, h5file):
