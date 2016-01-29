@@ -59,7 +59,29 @@ class Model:
         return
 
 
-    def predict(self, mvec, data, chunk, insar=False):
+    def addModulatingSplines(self, nsplmod):
+        """
+        Adjust indices for functional partitions for additional modulating splines.
+        We assume these splines are arranged first in the parameter vector.
+
+        Parameters
+        ----------
+        nsplmod: int
+            Number of modulating splines to add.
+        """
+        # First adjust the indices we already have
+        for attr in ('isecular', 'iseasonal', 'itransient', 'istep'):
+            ilist = getattr(self, attr)
+            newlist = [i + nsplmod for i in ilist]
+            setattr(self, attr, newlist)
+
+        # Pre-pend new seasonal indices
+        self.iseasonal = list(range(nsplmod)) + self.iseasonal
+        self.npar += nsplmod
+        return
+
+
+    def predict(self, mvec, data, chunk, insar=False, Gmod=None):
         """
         Predict time series with a functional decomposition specified by data.
 
@@ -89,6 +111,25 @@ class Model:
                 H = self.G
             else:
                 H = self.H
+
+            # Handle the seasonal signal separately
+            if Gmod is None:
+                seasonal = np.einsum('ij,jmn->imn', H[:,self.iseasonal], 
+                    mvec[self.iseasonal,:,:])
+            else:
+                ny, nx = mvec.shape[1:]
+                seasonal = np.empty((H.shape[0],ny,nx), dtype=mvec.dtype)
+                for i in range(ny):
+                    for j in range(nx):
+                        Gpix = Gmod[:,:,i,j]
+                        seasonal[:,i,j] = np.dot(Gpix, mvec[self.iseasonal,i,j])
+
+                tests = np.einsum('ijmn,jmn->imn', Gmod, mvec[self.iseasonal,:,:])
+
+                diff = seasonal - tests
+                print(mvec.min(), mvec.max())
+                print(diff.min(), diff.max())
+                sys.exit()
 
             # Perform prediction component by component
             out = {
