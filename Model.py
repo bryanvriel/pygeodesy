@@ -112,35 +112,24 @@ class Model:
             else:
                 H = self.H
 
-            # Handle the seasonal signal separately
+            # Compute secular signal
+            secular = np.einsum('ij,jmn->imn', H[:,self.isecular], 
+                    mvec[self.isecular,:,:])
+
+            # Compute seasonal signal
             if Gmod is None:
                 seasonal = np.einsum('ij,jmn->imn', H[:,self.iseasonal], 
                     mvec[self.iseasonal,:,:])
             else:
-                ny, nx = mvec.shape[1:]
-                seasonal = np.empty((H.shape[0],ny,nx), dtype=mvec.dtype)
-                for i in range(ny):
-                    for j in range(nx):
-                        Gpix = Gmod[:,:,i,j]
-                        seasonal[:,i,j] = np.dot(Gpix, mvec[self.iseasonal,i,j])
+                seasonal = np.einsum('ijmn,jmn->imn', Gmod, mvec[self.iseasonal,:,:])
 
-                tests = np.einsum('ijmn,jmn->imn', Gmod, mvec[self.iseasonal,:,:])
+            # Compute transient
+            transient = np.einsum('ij,jmn->imn', H[:,self.itransient], 
+                    mvec[self.itransient,:,:]
 
-                diff = seasonal - tests
-                print(mvec.min(), mvec.max())
-                print(diff.min(), diff.max())
-                sys.exit()
-
-            # Perform prediction component by component
-            out = {
-                'secular': np.einsum('ij,jmn->imn', H[:,self.isecular], 
-                    mvec[self.isecular,:,:]),
-                'seasonal': np.einsum('ij,jmn->imn', H[:,self.iseasonal], 
-                    mvec[self.iseasonal,:,:]),
-                'transient': np.einsum('ij,jmn->imn', H[:,self.itransient], 
-                    mvec[self.itransient,:,:])
-            }
-            out['full'] = out['secular'] + out['seasonal'] + out['transient']
+            # Save decomposition in dictionary
+            out = {'secular': secular, 'seasonal': seasonal, 'transient': transient,
+                'full': secular + seasonal + transient}
 
             # Loop over the function strings and data objects
             for key, dataObj in data.items():
