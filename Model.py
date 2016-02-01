@@ -25,7 +25,8 @@ class Model:
         self.H = rep.matrix
         if Jmat is not None:
             self.G = np.dot(Jmat, self.H)
-        self.npar = self.H.shape[1]
+            self.Nifg = self.G.shape[0]
+        self.Ntime, self.npar = self.H.shape
         
         # Initial ownership range is the full range
         self.jstart, self.jend = 0, self.npar
@@ -34,7 +35,9 @@ class Model:
         self.isecular, self.iseasonal, self.itransient, self.istep = [indices
             for indices in rep.getFunctionalPartitions(returnstep=True)] 
         self.ifull = np.arange(self.npar, dtype=int)
-
+        # And save the list sizes
+        self._updatePartitionSizes()
+        
         # Save the regularization indices
         self.reg_indices = rep.reg_ind
 
@@ -69,6 +72,10 @@ class Model:
         nsplmod: int
             Number of modulating splines to add.
         """
+        # Skip if nsplmod == 0
+        if nsplmod == 0:
+            return
+
         # First adjust the indices we already have
         for attr in ('isecular', 'iseasonal', 'itransient', 'istep'):
             ilist = getattr(self, attr)
@@ -78,6 +85,27 @@ class Model:
         # Pre-pend new seasonal indices
         self.iseasonal = list(range(nsplmod)) + self.iseasonal
         self.npar += nsplmod
+        self.ifull = np.arange(self.npar, dtype=int)
+
+        # Update partition sizes
+        self._updatePartitionSizes()
+
+        # Pre-pend columns of zeros for design matrices
+        self.H = np.column_stack((np.zeros((self.Ntime,nsplmod), 
+            dtype=self.H.dtype), self.H))
+        if hasattr(self, 'G'):
+            self.G = np.column_stack((np.zeros((self.Nifg,nsplmod), 
+            dtype=self.G.dtype), self.G))
+        return
+
+
+    def _updatePartitionSizes(self):
+        """
+        Update the sizes of the list of indices for the functional partitions.
+        """
+        for attr in ('secular', 'seasonal', 'transient', 'step', 'full'):
+            ind_list = getattr(self, 'i%s' % attr)
+            setattr(self, 'n%s' % attr, len(ind_list))
         return
 
 
@@ -115,7 +143,7 @@ class Model:
             # Compute secular signal
             secular = np.einsum('ij,jmn->imn', H[:,self.isecular], 
                     mvec[self.isecular,:,:])
-
+            
             # Compute seasonal signal
             if Gmod is None:
                 seasonal = np.einsum('ij,jmn->imn', H[:,self.iseasonal], 
@@ -125,7 +153,7 @@ class Model:
 
             # Compute transient
             transient = np.einsum('ij,jmn->imn', H[:,self.itransient], 
-                    mvec[self.itransient,:,:]
+                    mvec[self.itransient,:,:])
 
             # Save decomposition in dictionary
             out = {'secular': secular, 'seasonal': seasonal, 'transient': transient,
