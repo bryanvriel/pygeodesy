@@ -23,9 +23,7 @@ class Model:
         # Get the design matrices
         self.rep = rep
         self.H = rep.matrix
-        if Jmat is not None:
-            self.G = np.dot(Jmat, self.H)
-            self.Nifg = self.G.shape[0]
+        self.Jmat = Jmat
         self.Ntime, self.npar = self.H.shape
         
         # Initial ownership range is the full range
@@ -90,12 +88,9 @@ class Model:
         # Update partition sizes
         self._updatePartitionSizes()
 
-        # Pre-pend columns of zeros for design matrices
+        # Pre-pend columns of zeros for design matrix
         self.H = np.column_stack((np.zeros((self.Ntime,nsplmod), 
             dtype=self.H.dtype), self.H))
-        if hasattr(self, 'G'):
-            self.G = np.column_stack((np.zeros((self.Nifg,nsplmod), 
-            dtype=self.G.dtype), self.G))
         return
 
 
@@ -105,11 +100,12 @@ class Model:
         """
         for attr in ('secular', 'seasonal', 'transient', 'step', 'full'):
             ind_list = getattr(self, 'i%s' % attr)
+            print(attr, ind_list)
             setattr(self, 'n%s' % attr, len(ind_list))
         return
 
 
-    def predict(self, mvec, data, chunk, insar=False, Gmod=None):
+    def predict(self, mvec, data, chunk, Gmod=None):
         """
         Predict time series with a functional decomposition specified by data.
 
@@ -134,38 +130,39 @@ class Model:
             Nt,Ny,Nx = mvec.shape
             assert Nt == self.npar, 'Inconsistent dimension for mvec and design matrix.'
 
-            # Select the design matrix
-            if insar:
-                H = self.G
-            else:
-                H = self.H
-
             # Compute secular signal
-            secular = np.einsum('ij,jmn->imn', H[:,self.isecular], 
+            secular = np.einsum('ij,jmn->imn', self.H[:,self.isecular], 
                     mvec[self.isecular,:,:])
             
             # Compute seasonal signal
             if Gmod is None:
-                seasonal = np.einsum('ij,jmn->imn', H[:,self.iseasonal], 
+                seasonal = np.einsum('ij,jmn->imn', self.H[:,self.iseasonal], 
                     mvec[self.iseasonal,:,:])
             else:
                 seasonal = np.einsum('ijmn,jmn->imn', Gmod, mvec[self.iseasonal,:,:])
 
             # Compute transient
-            transient = np.einsum('ij,jmn->imn', H[:,self.itransient], 
+            transient = np.einsum('ij,jmn->imn', self.H[:,self.itransient], 
                     mvec[self.itransient,:,:])
 
             # Save decomposition in dictionary
             out = {'secular': secular, 'seasonal': seasonal, 'transient': transient,
                 'full': secular + seasonal + transient}
 
+            # Also make output for insar if Jmat is saved
+            if self.Jmat is not None:
+                out['insar'] = np.einsum('ij,jmn->imn', self.Jmat, out['full'])
+
             # Loop over the function strings and data objects
             for key, dataObj in data.items():
                 # Write out the prediction
-                dataObj.setChunk(out[key], chunk[0], chunk[1], dtype='recon') 
-                # And the parameters
-                ind = getattr(self, 'i%s' % key)
-                dataObj.setChunk(mvec[ind,:,:], chunk[0], chunk[1], dtype='par')
+                if key == 'insar':
+                    dataObj.setChunk(out[key], chunk[0], chunk[1]) 
+                else:
+                    dataObj.setChunk(out[key], chunk[0], chunk[1], dtype='recon') 
+                    # And the parameters
+                    ind = getattr(self, 'i%s' % key)
+                    dataObj.setChunk(mvec[ind,:,:], chunk[0], chunk[1], dtype='par')
 
         return
 

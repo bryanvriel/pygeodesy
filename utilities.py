@@ -22,7 +22,7 @@ def selectDataClass(h5file):
                 from .GPS import GPS
                 data = GPS()
             elif stype == 'insar':
-                from .Insar import Insar
+                from giant import Insar
                 data = Insar()
         except KeyError:
             from .GPS import GPS

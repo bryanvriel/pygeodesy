@@ -165,8 +165,9 @@ class TimeRepresentation:
 
             key = inkey.lower()
             if 'poly' in key:
-                secular.extend([current, current+1])
-                current += 2
+                npoly = self.repDict[key.upper()][0][0] + 1
+                secular.extend((current + np.arange(npoly, dtype=int)).tolist())
+                current += npoly
             elif 'step' in key:
                 secular.extend([current])
                 step.extend([current])
