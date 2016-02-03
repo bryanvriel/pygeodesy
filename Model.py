@@ -150,7 +150,7 @@ class Model:
                 'full': secular + seasonal + transient}
 
             # Also make output for insar if Jmat is saved
-            if self.Jmat is not None:
+            if self.Jmat is not None and 'insar' in data.keys():
                 out['insar'] = np.einsum('ij,jmn->imn', self.Jmat, out['full'])
 
             # Loop over the function strings and data objects
