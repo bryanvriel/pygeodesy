@@ -10,8 +10,7 @@ from .MPISolver import MPISolver
 from .SequentialSolver import SequentialSolver
 from . import utilities
 from .Wells import Wells
-from giant import Insar, getChunks
-from .InsarSolver import InsarSolver
+from giant import Insar, InsarSolver, getChunks
 from .StationGenerator import StationGenerator
 from .Model import Model
 

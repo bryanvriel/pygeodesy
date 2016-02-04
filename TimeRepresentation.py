@@ -33,8 +33,8 @@ class TimeRepresentation:
             self.npar = G.shape[1]
 
         self.Jmat = Jmat
-        if Jmat is not None:
-            self.nobs = Jmat.shape[0]
+        #if Jmat is not None:
+        #    self.nobs = Jmat.shape[0]
 
         self.repDict = None
         self.repKeys = []
@@ -318,8 +318,11 @@ class TimeRepresentation:
         kmat = self._getMatrixObs(index)
         # Get seasonal matrix slice
         kseas = self._getSeasMatrixObs(index, statInd)
-        # Combine the two
-        return np.hstack((kseas, kmat))
+        if len(kseas) > 0:
+            # Combine the two
+            return np.hstack((kseas, kmat))
+        else:
+            return kmat
 
 
     def _getMatrixObs(self, index):
