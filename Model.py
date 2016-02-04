@@ -100,7 +100,6 @@ class Model:
         """
         for attr in ('secular', 'seasonal', 'transient', 'step', 'full'):
             ind_list = getattr(self, 'i%s' % attr)
-            print(attr, ind_list)
             setattr(self, 'n%s' % attr, len(ind_list))
         return
 
