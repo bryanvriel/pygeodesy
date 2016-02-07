@@ -104,13 +104,13 @@ class Model:
         return
 
 
-    def predict(self, mvec, data, chunk, Gmod=None):
+    def predict(self, mvec, data, chunk, Gmod=None, Amod=None):
         """
         Predict time series with a functional decomposition specified by data.
 
         Parameters
         ----------
-        mvec: ndarray
+        mvec: np.ndarray
             Array of shape (N,Ny,Nx) representation chunk of parameters.
         data: dict
             Dictionary of {funcString: dataObj} pairs where funcString is a str
@@ -119,8 +119,10 @@ class Model:
             with an appropriate H5 file to store the reconstruction.
         chunk: list
             List of [slice_y, slice_x] representing chunk parameters.
-        insar: bool, optional
-            Output predictions in interferogram time dimension. Default: False.
+        Gmod: np.ndarray, optional
+            Modulated seasonal design matrix.
+        Amod: np.ndarray, optional
+            Amplitude modulation of seasonal design matrix.
         """
         # Only master does any work
         if self.rank == 0:
@@ -147,6 +149,10 @@ class Model:
             # Save decomposition in dictionary
             out = {'secular': secular, 'seasonal': seasonal, 'transient': transient,
                 'full': secular + seasonal + transient}
+
+            # Add modulation if requested
+            if Amod is not None and 'mod' in data.keys():
+                out['mod'] = np.einsum('ijmn,jmn->imn', Amod, mvec[self.iseasonal,:,:])
 
             # Also make output for insar if Jmat is saved
             if self.Jmat is not None and 'insar' in data.keys():
