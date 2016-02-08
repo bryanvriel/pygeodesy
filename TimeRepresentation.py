@@ -19,7 +19,6 @@ class TimeRepresentation:
         self.rank = rank
 
         self._matrix = self._seas_matrix = None
-        self.npar = None
         self.nobs = len(t)
         self.nseas_par = 0
         self.nstat = 1
@@ -30,7 +29,6 @@ class TimeRepresentation:
         # If a matrix is provided, go ahead and store to _matrix
         if G is not None:
             self._matrix = G
-            self.npar = G.shape[1]
 
         self.Jmat = Jmat
         #if Jmat is not None:
@@ -94,7 +92,6 @@ class TimeRepresentation:
             self.repKeys.append(key)
         self.rep = replist
         self._rep2matrix()
-        self.npar = self._matrix.shape[1]
         return
 
 
@@ -128,7 +125,6 @@ class TimeRepresentation:
             rep.append(entry)
         self.rep = rep
         self._rep2matrix()
-        self.npar = self._matrix.shape[1]
         return rep
 
 
@@ -418,14 +414,24 @@ class TimeRepresentation:
         self.noreg_ind = (regF < 0.9).nonzero()[0]
         # And indices for regularized variables
         self.reg_ind = (regF > 0.1).nonzero()[0]
-        # Store number of parameters
-        self.npar = self._matrix.shape[1]
 
         return 
 
     # --------------------------------------------------------------------------------
     # Properties
     # --------------------------------------------------------------------------------
+
+    @property
+    def npar(self):
+        n = 0
+        if self._matrix is not None:
+            n += self._matrix.shape[1]
+        if self._seas_matrix is not None:
+            n += self._seas_matrix.shape[1]
+        return n
+    @npar.setter
+    def npar(self, value):
+        raise NotImplementedError('Cannot set npar explicitly')
 
     # Generic temporal design matrix
     @property
