@@ -38,6 +38,7 @@ class TimeRepresentation:
 
         self.repDict = None
         self.repKeys = []
+        self.itransient = None
 
         return
 
@@ -201,10 +202,13 @@ class TimeRepresentation:
         self.nstep = len(step)
         self.nfull = self.npar
 
+        # Check if this time representation has a stored indices already
+        out_transient = self.itransient or transient
+
         if returnstep:
-            return secular, seasonal, transient, step
+            return secular, seasonal, out_transient, step
         else:
-            return secular, seasonal, transient
+            return secular, seasonal, out_transient
 
 
     def maskRepresentation(self, mask):
