@@ -176,8 +176,9 @@ class TimeRepresentation:
                 transient.extend([current])
                 current += 1
             elif 'seasonal' in key:
-                seasonal.extend([current, current+1, current+2, current+3])
-                current += 4
+                n_comp = 2 * len(self.repDict[key.upper()])
+                seasonal.extend((current + np.arange(n_comp, dtype=int)).tolist())
+                current += n_comp
             elif 'pbspline' in key:
                 nspl = self.repDict[key.upper()][1][0]
                 seasonal.extend((current + np.arange(nspl, dtype=int)).tolist())
@@ -409,7 +410,7 @@ class TimeRepresentation:
         Convert the string representation to a numpy array
         """
         # Use Timefn to get matrix
-        self._matrix, mName, regF = ts.Timefn(self.rep, self.t-self.t[0])
+        self._matrix, mName, regF = ts.Timefn(self.rep, self.t)
         self.regF = regF
         # Modulate by a connectivity matrix (for InSAR)
         if self.Jmat is not None:
@@ -420,6 +421,17 @@ class TimeRepresentation:
         self.reg_ind = (regF > 0.1).nonzero()[0]
 
         return 
+
+
+    def appendMatrix(self, mat, regVal=0.0):
+        """
+        Append a matrix to the already stored design matrix. Also updates the regF 
+        vector.
+        """
+        assert self._matrix is not None, 'Must generate matrix first.'
+        self._matrix = np.hstack((self._matrix, mat))
+        self.regF = np.hstack((self.regF, [regVal] * mat.shape[1]))
+
 
     # --------------------------------------------------------------------------------
     # Properties
