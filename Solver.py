@@ -3,6 +3,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from SparseConeQP import BaseOpt
+from cvxopt import matrix, sparse, spmatrix, solvers
+
+solvers.options['show_progress'] = False
 
 class Solver:
     """

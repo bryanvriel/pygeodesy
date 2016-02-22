@@ -13,5 +13,6 @@ from .Wells import Wells
 from giant import Insar, InsarSolver, getChunks
 from .StationGenerator import StationGenerator
 from .Model import Model
+from .Solver import Solver
 
 # end of file
