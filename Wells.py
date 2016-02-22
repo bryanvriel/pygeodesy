@@ -48,6 +48,8 @@ class Wells(TimeSeries):
                     datestr = group['dates'].value.astype(str)
                     data = group['ts'].value
                     range_vals = group['range'].value
+                    # Convert data to meters
+                    data *= 0.3048
                     # Make decimal year for each epoch
                     tdec = []
                     for dstr in datestr:
@@ -64,7 +66,7 @@ class Wells(TimeSeries):
                     stat['up'] = data
                     stat['w_up'] = np.ones_like(data)
                     stat['tdec'] = np.array(tdec)
-                    stat['midpoint'] = np.mean(range_vals)
+                    stat['midpoint'] = 0.3048*np.mean(range_vals)
                     self.statDict['%s_%s' % (statname, groupname.lower())] = stat
 
         # Finally, have the statDict remember that this is a 'wells' dtype
