@@ -116,6 +116,8 @@ class TimeRepresentation:
                 repType = 'ISPLINE'
             elif 'PBSPLINE' in repType:
                 repType = 'PBSPLINE'
+            elif 'BSPLINE' in repType:
+                repType = 'BSPLINE'
 
             if type(values) is list:
                 entry = [repType, values]
@@ -179,7 +181,7 @@ class TimeRepresentation:
                 n_comp = 2 * len(self.repDict[key.upper()])
                 seasonal.extend((current + np.arange(n_comp, dtype=int)).tolist())
                 current += n_comp
-            elif 'pbspline' in key:
+            elif 'bspline' in key:
                 nspl = self.repDict[key.upper()][1][0]
                 seasonal.extend((current + np.arange(nspl, dtype=int)).tolist())
                 current += nspl
@@ -253,7 +255,7 @@ class TimeRepresentation:
                 tk = np.linspace(t0, tf, nspl)
                 tau = 2.0 * abs(tk[1] - tk[0])
                 scales.extend([tau] * nspl)
-            elif 'ispline' in key:
+            elif 'ispline' in key or 'bspline' in key:
                 nspl = self.repDict[key.upper()][1][0]
                 tk = np.linspace(t0, tf, nspl)
                 tau = 2.0 * abs(tk[1] - tk[0])
@@ -289,6 +291,8 @@ class TimeRepresentation:
                 repType = 'LOG'
             elif 'ISPLINE' in repType:
                 repType = 'ISPLINE'
+            elif 'BSPLINE' in repType:
+                repType = 'BSPLINE'
 
             if repType in ['STEP', 'EXP', 'LOG']:
 
