@@ -492,7 +492,7 @@ class TimeSeries:
         return
 
 
-    def decompose(self, n_comp=1, plot=False, method='pca', dmod=''):
+    def decompose(self, n_comp=1, plot=False, method='pca', dmod='', remove=False):
         """
         Peform principal component analysis on a stack of time series.
         """
@@ -502,7 +502,7 @@ class TimeSeries:
         for comp in self.components:
             Adict[comp] = np.zeros((self.tdec.size, self.nstat))
             for j, (statname, stat) in enumerate(self.statGen):
-                dat = stat[dmod + comp].value
+                dat = np.array(stat[dmod + comp])
                 dat -= np.nanmean(dat)
                 ind = np.isnan(dat).nonzero()[0]
                 dat[ind] = np.nanstd(dat) * np.random.randn(len(ind))
@@ -519,13 +519,14 @@ class TimeSeries:
         # Now decompose the time series
         spatial = {}
         temporal = {}
+        model = {}
         for comp in self.components:
             temporal[comp] = decomposer.fit_transform(Adict[comp])
             if method == 'pca':
                 spatial[comp] = decomposer.components_.squeeze()
+                model[comp] = decomposer.inverse_transform(temporal[comp])
             elif method == 'ica':
                 spatial[comp] = decomposer.mixing_[:,n_comp-1].squeeze()
-
 
         if plot:
             import matplotlib.pyplot as plt
@@ -539,8 +540,31 @@ class TimeSeries:
             ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'],
                 scale=1.0)
             plt.show()
+
+        if remove:
+            for comp in self.components:
+                A = model[comp]
+                for j, (statname, stat) in enumerate(self.statGen):
+                    dat = stat[comp]
+                    raw_var = np.nanstd(dat)**2
+                    dat -= A[:,j]
+                    filt_var = np.nanstd(dat)**2
+                    print('%s-%s variance reduction: %f' % (statname, comp, filt_var/raw_var))
         
         return
+
+
+    def residuals(self):
+        """
+        Compute residuals between component and filt_component.
+        """
+        for comp in self.components:
+            for statname, stat in self.statGen:
+                data = stat[comp]
+                filtered = stat['filt_' + comp]
+                residual = data - filtered
+                stat['residual_' + comp] = residual
+        return 
  
 
     @staticmethod
