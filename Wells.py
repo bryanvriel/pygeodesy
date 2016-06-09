@@ -16,11 +16,11 @@ class Wells(TimeSeries):
     Class to hold well stations.
     """
 
-    def __init__(self, name='wells', stnfile=None, stnlist=None):
+    def __init__(self, name='wells', stnfile=None, stnlist=None, **kwargs):
         """
         Initiate EDM class.
         """
-        super().__init__(name=name, stnfile=stnfile, dtype='wells')
+        super().__init__(name=name, stnfile=stnfile, dtype='wells', **kwargs)
         return
         
 

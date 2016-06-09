@@ -20,12 +20,12 @@ class GPS(TimeSeries):
     
     statDict = None
 
-    def __init__(self, name='gps', stnfile=None, datformat=None):
+    def __init__(self, name='gps', stnfile=None, datformat=None, **kwargs):
         """
         Initiate GPS structure with station list
         """
         # Initialize the parent class
-        super().__init__(name=name, stnfile=stnfile, dtype='gps')
+        super().__init__(name=name, stnfile=stnfile, dtype='gps', **kwargs)
 
         self.datformat = datformat
         return

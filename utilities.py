@@ -5,6 +5,50 @@ import matplotlib.pyplot as plt
 from matplotlib.path import Path
 
 
+def merge(objtup, verbose=False):
+    """
+    Merges multiple TimeSeries objects.
+    """
+    import copy
+
+    # Reference first object and use that to extend
+    objout = objtup[0]
+    ref_type = objout.dtype
+    ref_tdec = objout.tdec
+
+    # Loop over the rest of the objects
+    if verbose: print('')
+    for obj in objtup[1:]:
+
+        if verbose: print('Interpolating', obj.name)
+
+        # Make sure it's the same type
+        assert obj.dtype == ref_type
+
+        # Add dictionary items after interpolation
+        for statname, rawstat in obj.statGen:
+            stat = copy.deepcopy(rawstat)
+            for comp in obj.components:
+                dat = stat[comp]
+                wgt = stat['w_' + comp]
+                stat[comp] = np.interp(ref_tdec, obj.tdec, dat, left=np.nan,
+                    right=np.nan)
+                stat['w_' + comp] = np.interp(ref_tdec, obj.tdec, wgt, left=np.nan,
+                    right=np.nan)
+                try:
+                    stat['filt_' + comp] = np.interp(ref_tdec, obj.tdec, stat['filt_' + comp],
+                        left=np.nan, right=np.nan)
+                except KeyError:
+                    pass
+            objout.statDict[statname] = stat
+
+    # Remake the station generator
+    objout.makeStatGen()
+    objout.transferDictInfo()
+
+    return
+
+
 def selectDataClass(h5file):
     """
     Utility function to read in a stack file, get its data type, and return
@@ -116,11 +160,14 @@ def subsetData(tobs, inputDict, t0=0.0, tf=3000.0, minValid=1, checkOnly=False, 
                     if h5:
                         dat = np.array(stat[attr])
                         stat[attr] = dat[tbool]
-                        try:
-                            filtdat = np.array(stat['filt_' + attr])
-                            stat['filt_' + attr] = filtdat[tbool]
-                        except KeyError:
-                            pass
+                        for modifier in ['filt_', 'secular_', 'transient_']:
+                            try:
+                                filtdat = np.array(stat[modifier + attr])
+                                stat[modifier + attr] = filtdat[tbool]
+                            except KeyError:
+                                pass
+                            except IndexError:
+                                pass
                     else:
                         dat = getattr(stat, attr)
                         setattr(stat, attr, dat[tbool])

@@ -15,7 +15,8 @@ class TimeSeries:
     Abstract class for all time series data objects.
     """
 
-    def __init__(self, name="Time series", stnfile=None, dtype=None):
+    def __init__(self, name="Time series", stnfile=None, dtype=None, copydict=False,
+        h5file=None):
 
         self.name = name
         self.dtype = dtype
@@ -50,6 +51,10 @@ class TimeSeries:
         self.seasonal_fid = None
         self.nstat = 0
         self.Jmat = None
+
+        # Read data if specified here
+        if h5file is not None:
+            self.loadStationH5(h5file, copydict=copydict)
 
         return
 
@@ -164,7 +169,7 @@ class TimeSeries:
         for attr in ('name', 'lat', 'lon', 'elev'):
             setattr(self, attr, [])
         for statname, stat in self.statGen:
-            self.name.append(statname.lower())
+            self.name.append(statname)
             if type(stat['lat']) in [h5py.Dataset, h5py.Group]:
                 self.lat.append(stat['lat'].value)
                 self.lon.append(stat['lon'].value)
