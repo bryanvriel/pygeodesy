@@ -18,7 +18,7 @@ class TimeSeries:
     def __init__(self, name="Time series", stnfile=None, dtype=None, copydict=False,
         h5file=None):
 
-        self.name = name
+        self._name = name
         self.dtype = dtype
 
         # Read station/groundpoint locations from file       
