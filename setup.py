@@ -36,7 +36,7 @@ if __name__ == '__main__':
             maintainer='Bryan Riel',
             author='Bryan Riel',
             author_email='bryanvriel@gmail.com',
-            #scripts=['bin/SBASInvert.py', 'bin/TimeFunctionInvert.py'],
+            scripts=['bin/pygeodesy'],
             configuration=configuration)
     finally:
         del sys.path[0]

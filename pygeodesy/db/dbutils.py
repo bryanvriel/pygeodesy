@@ -1,14 +1,14 @@
 #-*- coding: utf-8 -*-
 
 import numpy as np
+import datetime
 import os
 
-def buildFileList(input_dir, verbose=False):
+def buildFileList(input_dir):
     """
     Build a file list of data files given an input directory.
     """
-    if verbose:
-        print('Building file list')
+    print('Building file list')
 
     # Initialize empty dictionary for every station
     statdict = {}
@@ -58,11 +58,10 @@ def buildFileList(input_dir, verbose=False):
         filedict = statdict[statname]
         if len(filedict) < 40:
             removestat.append(statname)
-    if verbose:
-        print('Skipping these stations:', removestat)
+    print('Skipping these stations:', removestat)
 
     # Write filenames to text file
-    output = os.path.join('/net/jokull/bak/geonet/aux_data', 'file_list.txt')
+    output = 'file_list.txt'
     with open(output, 'w') as fid:
         for statname in statnames:
             if statname in removestat:

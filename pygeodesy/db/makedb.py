@@ -1,45 +1,51 @@
-#!/usr/bin/env python3
+#-*- coding: utf-8
 
-import numpy as np
+from __future__ import print_function
 from sqlalchemy import create_engine
 from sqlalchemy_utils import database_exists, drop_database, create_database
-from dbutils import *
+from .dbutils import *
 import pandas as pd
 import datetime
-import argparse
 import sys
 import os
 
-deg = 180.0 / np.pi
+
+# Define the default options
+defaults = {
+    'columns': "{'east': 0, 'north': 1, 'up': 2, 'sigma_east': 3, "
+        "'sigma_north': 4, 'sigma_up': 5}",
+    'directory': None,
+    'format': 'gps',
+    'dbname': 'data.db',
+    'dbtype': 'sqlite',
+    'filelist': None
+}
 
 
-def parse():
-    parser = argparse.ArgumentParser(description="Make database for time series data.")
-    parser.add_argument('-d', dest='directory', type=str, default=None, action='store',
-        help='Parent directory containing time series data. Default: None.')
-    parser.add_argument('-f', type=str, action='store', default=None, dest='filelist',
-        help='Input file list containing path to data files. Default: None.')
-    parser.add_argument('-v', '-V', action='store_true', dest='verbose',
-        help='Verbose mode.')
-    parser.add_argument('-o', type=str, action='store', default=None, dest='output',
-        help='Output file path for database. Default: None.')
-    return parser.parse_args()
+def makedb(optdict):
 
-
-def main(inputs):
+    # Update the options
+    opts = defaults.copy()
+    opts.update(optdict)
 
     # Read list of files or build
-    if inputs.directory is None and inputs.filelist is not None:
-        filelist = np.loadtxt(inputs.filelist, dtype=bytes).astype(str)
-    elif inputs.directory is not None and inputs.filelist is None:
-        fname = buildFileList(inputs.directory, verbose=inputs.verbose)
+    if opts['directory'] is None and opts['filelist'] is not None:
+        filelist = np.loadtxt(opts.filelist, dtype=bytes).astype(str)
+    elif opts['directory'] is not None and opts['filelist'] is None:
+        fname = buildFileList(opts['directory'])
         filelist = np.loadtxt(fname, dtype=bytes).astype(str)
     else:
         assert False, 'Must provide input directory or file list'
 
     # Initialize engine for SQL database
-    dbname = inputs.output or '/net/jokull/bak/geonet/aux_data/raw_data.db'
-    engine = create_engine('sqlite:///%s' % dbname)
+    dbname = opts['dbname']
+    if opts['dbtype'] == 'sqlite':
+        engine = create_engine('sqlite:///%s' % dbname)
+    elif opts['dbtype'] == 'mysql':
+        import socket
+        computer_name = socket.gethostname()
+        engine = create_engine('mysql+pymysql://root:%s@localhost:3306/%s' % 
+            (computer_name, dbname))
 
     # If database doesn't exist, create it and initialize output SQL tables
     ref_meta = None
@@ -64,7 +70,7 @@ def main(inputs):
     # If it does exist, read the list of files that already exist in the 
     # database and only keep the new ones
     else:
-        if inputs.verbose: print('Constructing list of unique files')
+        print('Constructing list of unique files')
         file_df = pd.read_sql_table('files', engine)
         ref_files = file_df['path'].values
         filelist = np.setxor1d(ref_files, filelist)
@@ -73,8 +79,7 @@ def main(inputs):
         ref_meta = pd.read_sql_table('metadata', engine, 
             columns=['id', 'lon', 'lat', 'elev'])
 
-    if inputs.verbose:
-        print('Number of new files to add to database:', len(filelist))
+    print('Number of new files to add to database:', len(filelist))
 
     # Create standard insertion SQL command
     cmd = ("INSERT INTO tseries(DATE, east, north, up, "
@@ -84,9 +89,10 @@ def main(inputs):
     # Loop over new filenames 
     cnt = 0
     stations = []; longitude = []; latitude = []; elev = []
+    deg = 180.0 / np.pi
     for filepath in filelist:
 
-        if cnt % 100 == 0 and inputs.verbose:
+        if cnt % 100 == 0:
             sys.stdout.write(' - %d\r' % cnt)
             sys.stdout.flush()
 
@@ -143,9 +149,5 @@ def main(inputs):
         meta_df = pd.concat([meta_df, ref_meta]).drop_duplicates(subset='id')
         meta_df.to_sql('metadata', engine, if_exists='replace')
 
-
-if __name__ == '__main__':
-    inputs = parse()
-    main(inputs)
 
 # end of file

@@ -1,37 +1,36 @@
-#!/usr/bin/env python3
+#-*- coding: utf-8 -*_
 
 import numpy as np
 from sqlalchemy import create_engine
-from sqlalchemy_utils import database_exists, drop_database, create_database
+from sqlalchemy_utils import create_database
 import pandas as pd
-import argparse
 import sys
 import os
 
 
-def parse():
-    parser = argparse.ArgumentParser(description="""
-        Extract sub-network from database.""")
-    parser.add_argument('database_in', type=str, 
-        help='Input database.')
-    parser.add_argument('database_out', type=str,
-        help='Output database.')
-    parser.add_argument('-list', type=str, action='store', default=None, 
-        help='Input file list containing station names to extract. Default: None.')
-    parser.add_argument('-poly', type=str, action='store', default=None,
-        help='Input polynomial to extract region of interest. Default: None.')
-    return parser.parse_args()
+# Define the default options
+defaults = {
+    'input': 'sqlite:///data.db',
+    'output': 'sqlite:///sub.db',
+    'poly': None,
+    'list': None
+}
 
 
-def main(inputs):
+def subnet(optdict):
+
+    # Update the options
+    opts = defaults.copy()
+    opts.update(optdict)
 
     # Create engine for input database
-    engine_in = create_engine('sqlite:///%s' % inputs.database_in)
+    engine_in = create_engine(opts['input'])
 
     # Clear output database and create it's engine
-    if os.path.isfile(inputs.database_out):
-        os.remove(inputs.database_out)
-    engine_out = create_engine('sqlite:///%s' % inputs.database_out)
+    dbname = opts['output'].split('/')[-1]
+    if os.path.isfile(dbname):
+        os.remove(dbname)
+    engine_out = create_engine(opts['output'])
     create_database(engine_out.url)
 
     # Read metadata from input table
@@ -39,14 +38,14 @@ def main(inputs):
     names = meta['id'].values
 
     # Use polynomial for a mask
-    if inputs.poly:
+    if opts['poly'] is not None:
 
         # Cache the raw lon/lat values
         lon, lat = meta['lon'].values, meta['lat'].values
 
         # Load points from polynomial file
         from matplotlib.path import Path
-        plon, plat = np.loadtxt(inputs.poly, unpack=True)
+        plon, plat = np.loadtxt(opts['poly'], unpack=True)
     
         # Make a path object to compute mask
         poly = Path(np.column_stack((plon, plat)))
@@ -55,10 +54,10 @@ def main(inputs):
         # Subset stations
         stations = names[mask]
 
-    elif inputs.list:
+    elif opts['list'] is not None:
         
         # Read stations
-        input_stations = np.loadtxt(inputs.list, dtype=bytes).astype(str)
+        input_stations = np.loadtxt(opts['list'], dtype=bytes).astype(str)
 
         # Keep ones that are in the database
         stations = np.intersect1d(input_stations, names)
@@ -109,11 +108,5 @@ def main(inputs):
         # Save to table
         data_df.reset_index(drop=True).to_sql(component, engine_out)
         sigma_df.reset_index(drop=True).to_sql('sigma_' + component, engine_out)
-
-
-
-if __name__ == '__main__':
-    inputs = parse()
-    main(inputs)
 
 # end of file
