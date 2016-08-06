@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy.stats import nanmedian
+import pandas as pd
 import tsinsar as ts
 import shutil
 import h5py
@@ -15,7 +16,39 @@ class Network:
     Abstract class for all time series data objects.
     """
 
-    def __init__(self, stnfile=None, dtype=None, copydict=False,
+    def __init__(self):
+        self.h5file = self.seasonal_fid = None
+        return
+
+
+    def read_metadata_ascii(self, filename, fmtdict, comment='#'):
+        """
+        Read coordinate metadata from an ASCII file.
+        """
+        self.clear()
+        if filename is None:
+            return
+        assert fmtdict is not None, 'Need to specify a format for reading metadata.'
+        with open(filename, 'r') as fid:
+            for line in fid:
+                data = line.split()
+                self.name.append(data[fmtdict['id']])
+                self.lat.append(data[fmtdict['lat']])
+                self.lon.append(data[fmtdict['lon']])
+                self.elev.append(data[fmtdict['elev']])
+
+        return
+
+
+    def meta_to_df(self):
+        """
+        Return metadata as a data frame.
+        """
+        return pd.DataFrame({'id': self.name, 'lon': self.lon, 
+            'lat': self.lat, 'elev': self.elev})
+
+
+    def oldinit(self, stnfile=None, dtype=None, copydict=False,
         h5file=None):
 
         self._name = name

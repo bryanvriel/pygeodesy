@@ -2,23 +2,46 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from .Station import STN
 from scipy.spatial import cKDTree
 import SparseConeQP as sp
 from matutils import dmultl, dmultr
 from timeutils import generateRegularTimeArray
+import datetime as dtime
 import tsinsar as ts
 import sys, os
 
 from .TimeSeries import TimeSeries
-
+from .utils import xyz2llh
 
 class GPS(TimeSeries):
     """
     Class to hold GPS station data and perform inversions
     """
     
-    statDict = None
+    # The string for inserting data into an SQL table
+    insert_cmd = ("INSERT INTO tseries(DATE, east, north, up, "
+        "sigma_east, sigma_north, sigma_up, id) "
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?);")
+
+    # The string for creating an SQL table
+    create_cmd = ("CREATE TABLE tseries("
+        "DATE TEXT, "
+        "east FLOAT, "
+        "north FLOAT, "
+        "up FLOAT, "
+        "sigma_east FLOAT, "
+        "sigma_north FLOAT, "
+        "sigma_up FLOAT, "
+        "id TEXT);")
+
+
+    # Default column settings
+    columns = {'east': 0, 'north': 1, 'up': 2, 'sigma_east': 3, 'sigma_north': 4,
+        'sigma_up': 5, 'year': None, 'month': None, 'day': None, 'hour': None, 
+        'doy': None}
+
 
     def __init__(self, name='gps', stnfile=None, datformat=None, **kwargs):
         """
@@ -29,6 +52,117 @@ class GPS(TimeSeries):
 
         self.datformat = datformat
         return
+
+
+    def updateASCIIformat(self, fmt, columns=None):
+        """
+        Set the column format from either a pre-supported format or
+        a user-provided dictionary of the column format.
+        """
+ 
+        new_columns = None
+
+        # Read a supported format        
+        if fmt is not None:
+            if fmt == 'gipsy':
+                new_columns = {'east': 0, 'north': 1, 'up': 2, 'sigma_east': 3,
+                    'sigma_north': 4, 'sigma_up': 5, 'year': 9, 'month': 10,
+                    'day': 11, 'hour': 12}
+            elif fmt == 'sopac':
+                new_columns = {'year': 1, 'doy': 2, 'north': 3, 'east': 4, 'up': 5,
+                    'sigma_north': 6, 'sigma_east': 7, 'sigma_up': 8}
+
+        # Or parse 'columns' string to make a dictionary
+        elif columns is not None:
+            new_columns = {}
+            fields = columns.strip('{}').split(',')
+            for keyval_str in columns.strip('{}').split(','):
+                key, value = keyval_str.split(':')
+                new_columns[key.strip()] = int(value)
+
+        # Update the columns dictionary
+        if new_columns is not None:
+            self.columns.update(new_columns)
+
+        return
+
+
+    def readASCII(self, filepath):
+        """
+        Read data from ASCII file
+        """
+        # Cache the columns
+        cols = self.columns
+
+        # Read all lines first
+        all_data = np.atleast_2d(np.loadtxt(filepath))
+        N = all_data.shape[0]
+        statname = filepath.split('/')[-1][:4]
+
+        # Column stack the observation data
+        #data = np.column_stack([all_data[cols[component]] for component in ['east',
+        #    'north', 'up', 'sigma_east', 'sigma_north', 'sigma_up']])
+
+        # Make date list
+        dates = []
+        years = all_data[:,cols['year']].astype(int)
+        if cols['hour'] is not None:
+            hours = all_data[:,cols['hour']].astype(int)
+        else:
+            hours = N * [0]
+
+        if cols['month'] is not None:
+            months = all_data[:,cols['month']].astype(int)
+            days = all_data[:,cols['day']].astype(int)
+            for i in range(N):
+                dates.append(dtime.datetime(years[i], months[i], days[i], hours[i]))
+
+        elif cols['doy'] is not None:
+            doy = all_data[:,cols['doy']].astype(int)
+            for i in range(N):
+                date = dtime.datetime(years[i], 1, 1)
+                dates.append(date + dtime.timedelta(doy[i]-1))
+
+        # Make a data frame
+        df = pd.DataFrame({'east': all_data[:,cols['east']],
+            'north': all_data[:,cols['north']],
+            'up': all_data[:,cols['up']],
+            'sigma_east': all_data[:,cols['sigma_east']],
+            'sigma_north': all_data[:,cols['sigma_north']],
+            'sigma_up': all_data[:,cols['sigma_up']],
+            'DATE': dates,
+            'id': N * [statname]})
+
+        return df, statname
+
+
+    def read_meta_header(self, filename):
+        """
+        Try to read metadata from header for gipsy format files.
+        """
+        # Only for gipsy
+        if self.datformat is None or self.datformat != 'gipsy':
+            return
+
+        # Get the cartesian coordinates from the header
+        with open(filename, 'r') as ifid:
+            for line in ifid:
+                if 'STA X' in line:
+                    statX = float(line.split()[5])
+                elif 'STA Y' in line:
+                    statY = float(line.split()[5])
+                elif 'STA Z' in line:
+                    statZ = float(line.split()[5])
+                elif 'SRGD' in line:
+                    break
+
+        # Convert to lat/lon/h
+        lat,lon,h = xyz2llh(np.array([statX, statY, statZ]), deg=True)
+
+        # Return data frame
+        statname = filename.split('/')[-1][:4]
+        return pd.DataFrame({'id': statname, 'lon': lon, 'lat': lat, 'elev': h},
+            index=[0])
 
     
     def read_data(self, gpsdir, fileKernel='CleanFlt', dataFactor=1000.0):
@@ -115,125 +249,5 @@ class GPS(TimeSeries):
                 #plt.plot(stn.tdec, data[ii], 'or')
                 #plt.show()
 
-
-    def resample(self, interp=False, t0=None, tf=None):
-        """
-        Resample GPS data to a common time array
-        """
-
-        # Loop through stations to find bounding times
-        tmin = 1000.0
-        tmax = 3000.0
-        for stn in self.stns:
-            tmin_cur = stn.tdec.min()
-            tmax_cur = stn.tdec.max()
-            if tmin_cur > tmin:
-                tmin = tmin_cur
-            if tmax_cur < tmax:
-                tmax = tmax_cur
-
-        refflag = False
-        if t0 is not None and tf is not None:
-            refflag = True
-            tref = generateRegularTimeArray(t0, tf)
-            days = tref.size
-            tree = cKDTree(tref.reshape((days,1)), leafsize=2*days)
-        else:
-            tref = generateRegularTimeArray(tmin, tmax)
-            days = tref.size
-
-        # Retrieve data that lies within the common window
-        for stn in self.stns:
-            if interp:
-                stn.north = np.interp(tref, stn.tdec, stn.north)
-                stn.east = np.interp(tref, stn.tdec, stn.east)
-                stn.up = np.interp(tref, stn.tdec, stn.up)
-                stn.tdec = tref.copy()
-            elif t0 is not None and tf is not None:
-                north = np.nan * np.ones_like(tref)
-                east = np.nan * np.ones_like(tref)
-                up = np.nan * np.ones_like(tref)
-                dn = np.nan * np.ones_like(tref)
-                de = np.nan * np.ones_like(tref)
-                du = np.nan * np.ones_like(tref)
-                for i in range(stn.tdec.size):
-                    if stn.tdec[i] < t0 or stn.tdec[i] > tf:
-                        continue
-                    nndist, ind = tree.query(np.array([stn.tdec[i]]), k=1, eps=1.0)
-                    north[ind] = stn.north[i]
-                    east[ind] = stn.east[i]
-                    up[ind] = stn.up[i]
-                    dn[ind] = stn.sn[i]
-                    de[ind] = stn.se[i]
-                    du[ind] = stn.su[i]
-                stn.tdec, stn.north, stn.east, stn.up = tref, north, east, up
-                stn.sn, stn.se, stn.su = dn, de, du
-            else:
-                bool = (stn.tdec >= tmin) & (stn.tdec <= tmax)
-                stn.north = stn.north[bool]
-                stn.east = stn.east[bool]
-                stn.up = stn.up[bool]
-                stn.tdec = stn.tdec[bool]
-
-
-    def extended_spinvert(self, tdec, repDict, penalty, cutoffDict, maxiter=4,
-                          outlierThresh=1.0e6):
-        """
-        Performs sparse inversion of model coefficients on each component. Each
-        station will have its own time representation and its own cutoff.
-        """
-        # Loop over the stations
-        mDicts = {}
-        for statname, stat in self.statGen:
-
-            # Construct a G matrix
-            Gref = np.asarray(ts.Timefn(repDict[statname], tdec-tdec[0])[0], order='C')
-            ndat,Npar = Gref.shape
-            refCutoff = cutoffDict[statname]
-
-            # Loop over the components
-            mDict = {}
-            for comp, w_comp in [('east','w_e'), ('north','w_n'), ('up','w_u')]:
-
-                #if comp in ['east', 'north']:
-                #    G = Gref[:,4:]
-                #    cutoff = refCutoff - 4
-                #else:
-                #    G = Gref
-                #    cutoff = refCutoff
-                cutoff = refCutoff
-                G = Gref
-
-                # Get finite data
-                dat = (getattr(stat, comp)).copy()
-                ind = np.isfinite(dat)
-                dat = dat[ind]
-                wgt = getattr(stat, w_comp)[ind]
-
-                # Instantiate a solver
-                solver = sp.BaseOpt(cutoff=cutoff, maxiter=maxiter, weightingMethod='log')
-
-                # Perform estimation
-                m = solver.invert(dmultl(wgt, G[ind,:]), wgt*dat, penalty)[0]
-
-                # Do one pass to remove outliers
-                fit = np.dot(G, m)
-                raw_dat = getattr(stat, comp)
-                misfit = np.abs(raw_dat - fit)
-                ind = misfit > outlierThresh
-                if ind.nonzero()[0].size > 1:
-                    print('Doing another pass to remove outliers')
-                    raw_dat[ind] = np.nan
-                    finiteInd = np.isfinite(raw_dat)
-                    dat = raw_dat[finiteInd]
-                    wgt = getattr(stat, w_comp)[finiteInd]
-                    m = solver.invert(dmultl(wgt, G[finiteInd,:]), wgt*dat, penalty)[0]
-
-                #if comp in ['east', 'north']:
-                #    m = np.hstack((np.zeros((4,)), m))
-                mDict[comp] = m
-            mDicts[statname] = (mDict, G)
-
-        return mDicts
 
 # end of file

@@ -16,6 +16,18 @@ class Wells(TimeSeries):
     Class to hold well stations.
     """
 
+    # The string for inserting data into a SQL table
+    insert_cmd = ("INSERT INTO tseries(DATE, up, sigma_up, id) "
+           "VALUES(?, ?, ?, ?);")
+
+    # The string for creating an SQL table
+    create_cmd = ("CREATE TABLE tseries("
+        "DATE TEXT, "
+        "up FLOAT, "
+        "sigma_up FLOAT, "
+        "id TEXT);")
+
+
     def __init__(self, name='wells', stnfile=None, stnlist=None, **kwargs):
         """
         Initiate EDM class.

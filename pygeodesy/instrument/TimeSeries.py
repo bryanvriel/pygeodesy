@@ -15,6 +15,10 @@ class TimeSeries:
     Abstract class for all time series data objects.
     """
 
+    statDict = None
+    insert_cmd = None
+    create_cmd = None
+
     def __init__(self, name="Time series", stnfile=None, dtype=None, copydict=False,
         h5file=None):
 
@@ -57,6 +61,13 @@ class TimeSeries:
             self.loadStationH5(h5file, copydict=copydict)
 
         return
+
+
+    def parse_line(self, line):
+        """
+        Child classes must define a line parser.
+        """
+        raise NotImplementedError('Child classes must define a line parser.')
 
 
     def setFormat(self, fmt):
