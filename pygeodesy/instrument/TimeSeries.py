@@ -16,28 +16,12 @@ class TimeSeries:
     """
 
     statDict = None
-    insert_cmd = None
-    create_cmd = None
 
     def __init__(self, name="Time series", stnfile=None, dtype=None, copydict=False,
         h5file=None):
 
         self._name = name
         self.dtype = dtype
-
-        # Read station/groundpoint locations from file       
-        if stnfile is not None:
-            ext = stnfile.split('.')[1]
-            if ext == 'txt':
-                name,lat,lon,elev = ts.tsio.textread(stnlist, 'S F F F')
-            elif ext == 'h5':
-                with h5py.File(stnfile, 'r') as ifid:
-                    name = ifid['name'].value
-                    lat = ifid['name'].value
-                    lon = ifid['lon'].value
-                    elev = ifid['elev'].value
-            else:
-                assert False, 'Input station file has an unsupported extension'
 
         # Determine the components depending on the datatype
         if self.dtype.lower() == 'gps':
@@ -52,9 +36,8 @@ class TimeSeries:
 
         self.h5file = self.output_h5file = self.statGen = None
         self.have_seasonal = False
-        self.seasonal_fid = None
-        self.nstat = 0
         self.Jmat = None
+        self.read_header = False
 
         # Read data if specified here
         if h5file is not None:
@@ -68,6 +51,14 @@ class TimeSeries:
         Child classes must define a line parser.
         """
         raise NotImplementedError('Child classes must define a line parser.')
+
+
+    def parse_id(self, filepath):
+        """
+        Parse the file path to retrieve the station id, assuming a 4-character
+        id. Can be overwritten by child classes for custom station ids.
+        """
+        return filepath.split('/')[-1][:4].lower()
 
 
     def setFormat(self, fmt):
@@ -106,8 +97,6 @@ class TimeSeries:
         elif type(self.h5file) is dict and self.output_h5file is not None:
             print('Finished processing. Saving H5 file')
             self._saveh5(self.output_h5file, self.h5file)
-        if self.seasonal_fid is not None:
-            self.seasonal_fid.close()
         return
 
 
@@ -217,6 +206,37 @@ class TimeSeries:
         # Finally, make sure to remember that we have seasonal data
         self.have_seasonal = True
         return
+
+
+    def read_metadata_ascii(self, filename, fmtdict, comment='#'):
+        """
+        Read coordinate metadata from an ASCII file.
+        """
+        self.clear()
+        if filename is None:
+            return
+        assert fmtdict is not None, 'Need to specify a format for reading metadata.'
+        with open(filename, 'r') as fid:
+            for line in fid:
+                data = line.split()
+                self.name.append(data[fmtdict['id']])
+                self.lat.append(data[fmtdict['lat']])
+                self.lon.append(data[fmtdict['lon']])
+                self.elev.append(data[fmtdict['elev']])
+
+        return
+
+
+    def reformat_metadata(self, fmt='dict'):
+        """
+        Return metadata as {'dict', 'data frame'}.
+        """
+        out = {'id': self.name, 'lon': self.lon, 'lat': self.lat, 'elev': self.elev}
+        if fmt == 'dict':
+            return out
+        elif fmt == 'data frame':
+            import pandas as pd
+            return pd.DataFrame(out)
 
 
     @staticmethod

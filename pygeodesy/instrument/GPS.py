@@ -20,23 +20,6 @@ class GPS(TimeSeries):
     Class to hold GPS station data and perform inversions
     """
     
-    # The string for inserting data into an SQL table
-    insert_cmd = ("INSERT INTO tseries(DATE, east, north, up, "
-        "sigma_east, sigma_north, sigma_up, id) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?, ?);")
-
-    # The string for creating an SQL table
-    create_cmd = ("CREATE TABLE tseries("
-        "DATE TEXT, "
-        "east FLOAT, "
-        "north FLOAT, "
-        "up FLOAT, "
-        "sigma_east FLOAT, "
-        "sigma_north FLOAT, "
-        "sigma_up FLOAT, "
-        "id TEXT);")
-
-
     # Default column settings
     columns = {'east': 0, 'north': 1, 'up': 2, 'sigma_east': 3, 'sigma_north': 4,
         'sigma_up': 5, 'year': None, 'month': None, 'day': None, 'hour': None, 
@@ -68,6 +51,7 @@ class GPS(TimeSeries):
                 new_columns = {'east': 0, 'north': 1, 'up': 2, 'sigma_east': 3,
                     'sigma_north': 4, 'sigma_up': 5, 'year': 9, 'month': 10,
                     'day': 11, 'hour': 12}
+                self.read_header = True
             elif fmt == 'sopac':
                 new_columns = {'year': 1, 'doy': 2, 'north': 3, 'east': 4, 'up': 5,
                     'sigma_north': 6, 'sigma_east': 7, 'sigma_up': 8}
@@ -87,56 +71,7 @@ class GPS(TimeSeries):
         return
 
 
-    def readASCII(self, filepath):
-        """
-        Read data from ASCII file
-        """
-        # Cache the columns
-        cols = self.columns
-
-        # Read all lines first
-        all_data = np.atleast_2d(np.loadtxt(filepath))
-        N = all_data.shape[0]
-        statname = filepath.split('/')[-1][:4]
-
-        # Column stack the observation data
-        #data = np.column_stack([all_data[cols[component]] for component in ['east',
-        #    'north', 'up', 'sigma_east', 'sigma_north', 'sigma_up']])
-
-        # Make date list
-        dates = []
-        years = all_data[:,cols['year']].astype(int)
-        if cols['hour'] is not None:
-            hours = all_data[:,cols['hour']].astype(int)
-        else:
-            hours = N * [0]
-
-        if cols['month'] is not None:
-            months = all_data[:,cols['month']].astype(int)
-            days = all_data[:,cols['day']].astype(int)
-            for i in range(N):
-                dates.append(dtime.datetime(years[i], months[i], days[i], hours[i]))
-
-        elif cols['doy'] is not None:
-            doy = all_data[:,cols['doy']].astype(int)
-            for i in range(N):
-                date = dtime.datetime(years[i], 1, 1)
-                dates.append(date + dtime.timedelta(doy[i]-1))
-
-        # Make a data frame
-        df = pd.DataFrame({'east': all_data[:,cols['east']],
-            'north': all_data[:,cols['north']],
-            'up': all_data[:,cols['up']],
-            'sigma_east': all_data[:,cols['sigma_east']],
-            'sigma_north': all_data[:,cols['sigma_north']],
-            'sigma_up': all_data[:,cols['sigma_up']],
-            'DATE': dates,
-            'id': N * [statname]})
-
-        return df, statname
-
-
-    def read_meta_header(self, filename):
+    def read_meta_header(self, filename, meta_dict=None):
         """
         Try to read metadata from header for gipsy format files.
         """
@@ -159,10 +94,17 @@ class GPS(TimeSeries):
         # Convert to lat/lon/h
         lat,lon,h = xyz2llh(np.array([statX, statY, statZ]), deg=True)
 
-        # Return data frame
-        statname = filename.split('/')[-1][:4]
-        return pd.DataFrame({'id': statname, 'lon': lon, 'lat': lat, 'elev': h},
-            index=[0])
+        # Update or return dictionary
+        statname = filename.split('/')[-1][:4].lower()
+        if meta_dict is not None:
+            if not statname in meta_dict['id']:
+                meta_dict['id'].append(statname)
+                meta_dict['lon'].append(lon)
+                meta_dict['lat'].append(lat)
+                meta_dict['elev'].append(h)
+            return
+        else:
+            return {'id': statname, 'lon': lon, 'lat': lat, 'elev': h}
 
     
     def read_data(self, gpsdir, fileKernel='CleanFlt', dataFactor=1000.0):
