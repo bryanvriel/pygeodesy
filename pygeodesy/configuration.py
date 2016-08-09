@@ -38,7 +38,15 @@ class Configuration:
         optdict = {key: value for (key,value) in config.items('global')}
 
         # Get options for module
-        optdict.update({key: value for (key,value) in config.items(self.module)})
+        for key,value in config.items(self.module):
+            
+            # Check if boolean
+            if value in ('True', 'true'):
+                optdict[key] = True
+            elif value in ('False', 'false'):
+                optdict[key] = False
+            else:
+                optdict[key] = value
 
         return optdict
 

@@ -75,7 +75,10 @@ class Network:
         """
         Load data for a given component and station ID. Stored as a data frame.
         """
-        return pd.read_sql_table(component, self.engine.engine, columns=[statid,])
+        if type(statid) in (list, tuple, np.ndarray):
+            return pd.read_sql_table(component, self.engine.engine, columns=statid)
+        else:
+            return pd.read_sql_table(component, self.engine.engine, columns=[statid,])
 
 
     def partitionStations(self, npart=None):
