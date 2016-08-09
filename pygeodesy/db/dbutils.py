@@ -4,7 +4,29 @@ import numpy as np
 import datetime
 import os
 
-def buildFileList(input_dir):
+def buildFileList(input_dir, fmt, extension):
+    if fmt == 'gipsy':
+        fname = buildFileList_gipsy(input_dir)
+    else:
+        fname = buildFileList_generic(input_dir, extension)
+    return fname
+
+
+def buildFileList_generic(input_dir, extension):
+    """
+    Build a file list of data files.
+    """
+    fid = open('file_list.txt', 'w')
+    for root, dirs, files in os.walk(input_dir):
+        for fname in files:
+            if not fname.endswith(extension):
+                continue    
+            fid.write('%s\n' % os.path.join(root, fname))
+    fid.close()
+    return 'file_list.txt'
+
+
+def buildFileList_gipsy(input_dir):
     """
     Build a file list of data files given an input directory.
     """

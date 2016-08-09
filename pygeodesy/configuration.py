@@ -34,8 +34,11 @@ class Configuration:
             print('Found config sections', config.sections())
             assert False, 'Configuration error'
 
-        # Get values
-        optdict = {key: value for (key,value) in config.items(self.module)}
+        # Get global options
+        optdict = {key: value for (key,value) in config.items('global')}
+
+        # Get options for module
+        optdict.update({key: value for (key,value) in config.items(self.module)})
 
         return optdict
 

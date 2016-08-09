@@ -17,7 +17,6 @@ defaults = {
     'output': 'sqlite:///sub.db',
     'poly': None,
     'list': None,
-    'type': 'gps'
 }
 
 

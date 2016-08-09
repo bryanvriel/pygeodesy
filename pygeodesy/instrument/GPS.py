@@ -37,13 +37,14 @@ class GPS(TimeSeries):
         return
 
 
-    def updateASCIIformat(self, fmt, columns=None):
+    def updateASCIIformat(self, fmt, columns=None, read_header=False):
         """
         Set the column format from either a pre-supported format or
         a user-provided dictionary of the column format.
         """
  
         new_columns = None
+        self.read_header = False
 
         # Read a supported format        
         if fmt is not None:
@@ -75,24 +76,47 @@ class GPS(TimeSeries):
         """
         Try to read metadata from header for gipsy format files.
         """
-        # Only for gipsy
-        if self.datformat is None or self.datformat != 'gipsy':
-            return
 
         # Get the cartesian coordinates from the header
-        with open(filename, 'r') as ifid:
-            for line in ifid:
-                if 'STA X' in line:
-                    statX = float(line.split()[5])
-                elif 'STA Y' in line:
-                    statY = float(line.split()[5])
-                elif 'STA Z' in line:
-                    statZ = float(line.split()[5])
-                elif 'SRGD' in line:
-                    break
+        if self.datformat == 'gipsy':
 
-        # Convert to lat/lon/h
-        lat,lon,h = xyz2llh(np.array([statX, statY, statZ]), deg=True)
+            # Parse header
+            with open(filename, 'r') as ifid:
+                for line in ifid:
+                    if 'STA X' in line:
+                        statX = float(line.split()[5])
+                    elif 'STA Y' in line:
+                        statY = float(line.split()[5])
+                    elif 'STA Z' in line:
+                        statZ = float(line.split()[5])
+                    elif 'SRGD' in line:
+                        break
+
+            # Convert to lat/lon/h
+            lat,lon,h = xyz2llh(np.array([statX, statY, statZ]), deg=True)
+
+        elif self.datformat == 'sopac':
+
+            # Parse header
+            factors = {'N': 1.0, 'E': 1.0, 'W': -1.0, 'S': -1.0}
+            with open(fname, 'r') as fid:
+                for line in fid:
+                    if not line.startswith('#'):
+                        break
+                    if 'Reference position' in line:
+                        subline = line.split(':')[1][:-5]
+                        dat = subline.split()
+                        lat_fact = factors[dat[0][0]]
+                        lon_fact = factors[dat[3][0]]
+                        lat = lat_fact * (float(dat[0][1:]) + float(dat[1]) / 60.0
+                            + float(dat[2]) / 3600.0)
+                        lon = lon_fact * (float(dat[3][1:]) + float(dat[4]) / 60.0
+                            + float(dat[5]) / 3600.0)
+                        h = float(dat[6])
+                        break
+
+        else:
+            return
 
         # Update or return dictionary
         statname = filename.split('/')[-1][:4].lower()
@@ -105,47 +129,6 @@ class GPS(TimeSeries):
             return
         else:
             return {'id': statname, 'lon': lon, 'lat': lat, 'elev': h}
-
-    
-    def read_data(self, gpsdir, fileKernel='CleanFlt', dataFactor=1000.0):
-        """
-        Reads GPS data and convert to mm
-        """
-        self.stns = []
-        lon = []; lat = []; elev = []; name = []
-        # If the list of stations/coordinates have already been set, loop over them
-        if self.nstat > 0:
-            for ii in range(self.nstat):
-                stn = STN(self.name[ii], gpsdir, format=self.datformat,
-                    fileKernel=fileKernel, dataFactor=dataFactor)
-                if stn.success:
-                    self.stns.append(stn)
-                    lon.append(self.lon[ii])
-                    lat.append(self.lat[ii])
-                    elev.append(self.elev[ii])
-                    name.append(self.name[ii])
-
-        # If not, we loop over the files listed in gpsdir, and pull the coordinates
-        # from the header
-        else:
-            for root, dirs, files in os.walk(gpsdir):
-                for fname in files:
-                    if fileKernel not in fname:
-                        continue
-                    statname = fname[:4].lower()
-                    stn = STN(statname, gpsdir, format=self.datformat,
-                        fileKernel=fileKernel, dataFactor=dataFactor, getcoords=True)
-                    self.stns.append(stn)
-                    lon.append(stn.lon)
-                    lat.append(stn.lat)
-                    elev.append(stn.elev)
-                    name.append(statname)
-                   
-        # Save coordinates and names to self 
-        for key, value in (('lon', lon), ('lat', lat), ('elev', elev), ('name', name)):
-            setattr(self, key, value)
-        self.nstat = len(name)
-        return
 
 
     def preprocess(self, hdrformat='filt', dataFactor=1000.0):

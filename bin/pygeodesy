@@ -18,29 +18,16 @@ def parse():
         help='Database configuration file. Default: data.cfg.')
     dbparser.add_argument('-v', '-V', action='store_true', dest='verbose',
         help='Verbose mode.')
-    #dbparser.add_argument('-d', dest='directory', type=str, default=None, action='store',
-    #    help='Parent directory containing time series data. Default: None.')
-    #dbparser.add_argument('-f', type=str, action='store', default=None, dest='filelist',
-    #    help='Input file list containing path to data files. Default: None.')
-    
-    #dbparser.add_argument('-o', type=str, action='store', default=None, dest='output',
-    #    help='Output file path for database. Default: None.')
-    #dbparser.add_argument('-dbtype', type=str, action='store', default='sqlite',
-    #    help='Database type {sqlite, mysql}. Default: sqlite.')
 
     # Options for subnet
     subnet = subparsers.add_parser('subnet', help='Extract sub-network from database.')
     subnet.add_argument('-cfg', action='store', default='data.cfg',
         help='Subset network configuration file. Default: data.cfg.')
-    #subnet.add_argument('database_in', type=str,
-    #    help='Input database.')
-    #subnet.add_argument('database_out', type=str,
-    #    help='Output database.')
-    #subnet.add_argument('-list', type=str, action='store', default=None,
-    #    help='Input file list containing station names to extract. Default: None.')
-    #subnet.add_argument('-poly', type=str, action='store', default=None,
-    #    help='Input polynomial to extract region of interest. Default: None.')
 
+    # Option for detrend
+    detrend = subparsers.add_parser('detrend', help='Detrend time series in database.')
+    detrend.add_argument('-cfg', action='store', default='data.cfg',
+        help='Detrend configuration file. Default: data.cfg.')
 
     return parser.parse_args()
     
@@ -59,6 +46,9 @@ if __name__ == '__main__':
 
     elif inputs.module == 'subnet':
         pg.db.subnet(config())
+
+    elif inputs.module == 'detrend':
+        pg.network.detrend(config())
 
     else:
         print('Module', inputs.module, 'is not supported')

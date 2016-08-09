@@ -13,18 +13,16 @@ import pygeodesy.instrument as instrument
 
 # Define the default options
 defaults = {
-    'columns': "{'east': 0, 'north': 1, 'up': 2, 'sigma_east': 3, "
-        "'sigma_north': 4, 'sigma_up': 5}",
     'columns': None,
     'format': None,
     'directory': None,
-    'type': 'gps',
     'dbname': 'data.db',
     'dbtype': 'sqlite',
     'filelist': None,
     'metafile': None,
     'metafmt': None,
     'chunk_size': 100000,
+    'extension': '.neu',
 }
 
 
@@ -38,7 +36,7 @@ def makedb(optdict):
     if opts['directory'] is None and opts['filelist'] is not None:
         filelist = np.loadtxt(opts.filelist, dtype=bytes).astype(str)
     elif opts['directory'] is not None and opts['filelist'] is None:
-        fname = buildFileList(opts['directory'])
+        fname = buildFileList(opts['directory'], opts['format'], opts['extension'])
         filelist = np.loadtxt(fname, dtype=bytes).astype(str)
     else:
         assert False, 'Must provide input directory or file list'

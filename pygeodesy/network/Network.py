@@ -2,12 +2,14 @@
 
 import numpy as np
 from scipy.stats import nanmedian
+import datetime as dtime
+from mpi4py import MPI
 import pandas as pd
 import tsinsar as ts
 import shutil
 import h5py
 
-from timeutils import generateRegularTimeArray
+from timeutils import datestr2tdec
 from scipy.spatial import cKDTree
 
 
@@ -16,93 +18,46 @@ class Network:
     Abstract class for all time series data objects.
     """
 
-    def __init__(self):
-        self.h5file = self.seasonal_fid = None
-        return
-
-
-    def oldinit(self, stnfile=None, dtype=None, copydict=False,
-        h5file=None):
-
-        self._name = name
-        self.dtype = dtype
-
-        # Read station/groundpoint locations from file       
-        if stnfile is not None:
-            ext = stnfile.split('.')[1]
-            if ext == 'txt':
-                name,lat,lon,elev = ts.tsio.textread(stnlist, 'S F F F')
-            elif ext == 'h5':
-                with h5py.File(stnfile, 'r') as ifid:
-                    name = ifid['name'].value
-                    lat = ifid['name'].value
-                    lon = ifid['lon'].value
-                    elev = ifid['elev'].value
-            else:
-                assert False, 'Input station file has an unsupported extension'
-
-        # Determine the components depending on the datatype
-        if self.dtype.lower() == 'gps':
-            self.components = ['east', 'north', 'up']
-        elif self.dtype.lower() in ['edm', 'insar']:
-            self.components = ['los']
-        elif self.dtype.lower() in ['wells']:
-            self.components = ['up']
-        else:
-            assert False, 'Unsupported data type. Must be gps, edm, or insar'
-        self.ncomp = len(self.components)
-
-        self.h5file = self.output_h5file = self.statGen = None
-        self.have_seasonal = False
-        self.seasonal_fid = None
-        self.nstat = 0
-        self.Jmat = None
-
-        # Read data if specified here
-        if h5file is not None:
-            self.loadStationH5(h5file, copydict=copydict)
-
-        return
-
-
-    def setFormat(self, fmt):
+    def __init__(self, instrument, engine, comm=None):
         """
-        Define the interface to the data dictionary.
+        Initialize the network with a SQL engine.
         """
-        if fmt == 'h5':
-            self.getData = self._h5get
-        else:
-            self.getData = self._get
-        return
 
+        # Initialize the MPI parameters 
+        self.comm = comm or MPI.COMM_WORLD
+        self.rank = comm.Get_rank()
+        self.size = comm.Get_size()
 
-    def getData(self, stat, attr):
-        if type(stat) is dict:
-            return np.array(stat[attr])
-        else:
-            return stat.attr
+        if self.rank == 0:
+            print('Initializing network')
 
+        # Save the engine and instrument
+        self.inst = instrument
+        self.engine = engine 
 
-    def _h5get(self, attr):
-        return np.array(self.h5file[attr])
+        # Get list of tables in database
+        self.table_df = pd.read_sql_query("SELECT name FROM sqlite_master "
+            "WHERE type='table' ORDER BY name;", self.engine.engine)
 
+        # Read metadata and save to self
+        self.meta = pd.read_sql_table('metadata', self.engine.engine,
+            columns=['id','lat','lon','elev'])
+        self.names = self.meta['id'].values
+        for key in ('id', 'lat','lon','elev'):
+            setattr(self, key, self.meta[key].values)
+        self.nstat = len(self.names)
 
-    def _get(self, attr):
-        return self.attr
+        # Save the observation dates
+        dates = pd.read_sql_table(self.inst.components[0], self.engine.engine,
+            columns=['DATE']).values
+        dates = np.array([pd.to_datetime(date, infer_datetime_format=True)
+            for date in dates])
+        self.dates = [dtime.datetime.utcfromtimestamp(date.astype('O') / 1.0e9)
+            for date in dates]
 
+        # Convert dates to decimal year and save
+        self.tdec = np.array([datestr2tdec(pydtime=date) for date in self.dates])
 
-    def __del__(self):
-        """
-        Make sure to close any H5 file.
-        """
-        if type(self.h5file) is h5py.File:
-            print('Finished processing. Closing H5 file')
-            self.h5file.close()
-        elif type(self.h5file) is dict and self.output_h5file is not None:
-            print('Finished processing. Saving H5 file')
-            self._saveh5(self.output_h5file, self.h5file)
-        if self.seasonal_fid is not None:
-            self.seasonal_fid.close()
         return
 
 
@@ -110,212 +65,33 @@ class Network:
         """
         Clears entries for station locations and names.
         """
-        for attr in ('name', 'lat', 'lon', 'elev'):
+        for attr in ('names', 'lat', 'lon', 'elev'):
             setattr(self, attr, [])
         self.nstat = 0
         return
 
 
-    def loadStationDict(self, inputDict):
+    def get(self, component, statid):
         """
-        Transfers data from a dictionary of station classes to self.
+        Load data for a given component and station ID. Stored as a data frame.
         """
-        self.clear()
-        for statname, stat in inputDict.items():
-            self.name.append(statname)
-            self.lat.append(stat.lat)
-            self.lon.append(stat.lon)
-            self.elev.append(stat.elev)
-        self.name = np.array(self.name)
-        self.lat,self.lon,self.elev = [np.array(lst) for lst in [self.lat,self.lon,self.elev]]
-        self.nstat = self.lat.size
-        self.statDict = inputDict
-        self.makeStatGen()
-
-        return
+        return pd.read_sql_table(component, self.engine.engine, columns=[statid,])
 
 
-    def loadStationH5(self, h5file, fileout=None, copydict=False):
+    def partitionStations(self, npart=None):
         """
-        Transfers data from an h5py data stack to self.
+        Create equal partitions of stations in the network. Using the MPI
+        size to create the partitions if npart is not provided.
         """
-        self.clear()
-
-        # If user specifies an output file, we copy the input file and open
-        # the output in read/write mode
-        if fileout is None:
-            if copydict:
-                self.h5file = self._loadh5(h5file)
-            else:
-                self.h5file = h5py.File(h5file, 'r')
+        N = npart or self.size
+        nominal_load = self.nstat // N
+        if self.rank == self.size - 1:
+            procN = self.nstat - self.rank * nominal_load
         else:
-            shutil.copyfile(h5file, fileout)
-            # Load all data into a python dictionary
-            if copydict:
-                self.h5file = self._loadh5(h5file)
-                self.output_h5file = fileout
-            else:
-                self.h5file = h5py.File(fileout, 'r+')
-        self.statDict = self.h5file
-
-        # Make a generator to loop over station data
-        self.makeStatGen()
-        
-        # Get the data
-        self.transferDictInfo(h5=True)
+            procN = nominal_load
+        istart = self.rank * nominal_load
+        self.sub_names = self.names[istart:istart+procN]
         return
-
-
-    def transferDictInfo(self, h5=True):
-        """
-        Transfer coordinates, names, and tdec from dictionary to self.
-        """
-        if not h5:
-            raise NotImplementedError('still on todo list')
-        for attr in ('name', 'lat', 'lon', 'elev'):
-            setattr(self, attr, [])
-        for statname, stat in self.statGen:
-            self.name.append(statname)
-            if type(stat['lat']) in [h5py.Dataset, h5py.Group]:
-                self.lat.append(stat['lat'].value)
-                self.lon.append(stat['lon'].value)
-                self.elev.append(stat['elev'].value)
-            else:
-                self.lat.append(stat['lat'])
-                self.lon.append(stat['lon'])
-                self.elev.append(stat['elev'])
-        self.name = np.array(self.name)
-        self.lat,self.lon,self.elev = [np.array(lst) for lst in [self.lat,self.lon,self.elev]]
-        self.nstat = self.lat.size
-        self.tdec = np.array(self.h5file['tdec'])
-        return
-
-    
-    def loadSeasonalH5(self, h5file):
-        """
-        Transfers data from an h5py data stack to self.
-        """
-        # Load the seasonal dictionary
-        seas_dat = self._loadh5(h5file)
-
-        # Get the number of periodic B-splines
-        self.npbspline = seas_dat['npbspline']
-
-        # Get the seasonal coefficients
-        for statname, stat in self.statGen:
-            seas_stat = seas_dat[statname]
-            for component in self.components:
-                m = seas_stat['m_' + component]
-                stat['seasm_' + component] = m
-                self.npar_seasonal = len(m)
-
-        # Finally, make sure to remember that we have seasonal data
-        self.have_seasonal = True
-        return
-
-
-    @staticmethod
-    def _loadh5(h5file):
-        """
-        Load data from an H5 file into a dictionary.
-        """
-        data = {}
-        with h5py.File(h5file, 'r') as h5file:
-            for key, value in h5file.items():
-                if type(value) == h5py.Group:
-                    group = {}
-                    for gkey, gvalue in value.items():
-                        group[gkey] = gvalue.value
-                    data[key] = group
-                else:
-                    data[key] = value.value
-        return data
-        
-
-    @staticmethod
-    def _saveh5(h5file, data):
-        """
-        Save a data stored in dictionary to H5 file.
-        """
-        print('H5 file:', h5file)
-        with h5py.File(h5file, 'w') as hfid:
-            for key, value in data.items():
-                if type(value) is dict:
-                    Group = hfid.create_group(key)
-                    for gkey, gvalue in value.items():
-                        Group[gkey] = gvalue
-                else:
-                    hfid[key] = value
-        return
-
-
-    def makeStatGen(self):
-        """
-        Make a generator for looping over the stations and station names.
-        """
-        self.statGen = list((statname, stat) for (statname, stat) in self.statDict.items()
-            if statname not in ['tdec', 'G', 'cutoff', 'npbspline', 'dtype'])
-        self.nstat = len(self.statGen)
-        return
-
-
-    def combine_data(self, filename):
-        """
-        Combine data from multiple stations. First chronological station is the reference one.
-        """
-        delete_stat = []
-        with open(filename, 'r') as fid:
-            # Loop over lines in file
-            for line in fid:
-
-                # Read the statnames
-                statnames = [name.lower().strip() for name in line.split(',')]
-                # Sort the stations by earliest finite data
-                starting_indices = []
-                for name in statnames:
-                    data = self.statDict[name][self.components[0]]
-                    starting_indices.append(np.isfinite(data).nonzero()[0][0])
-                statnames = [statnames[ind] for ind in np.argsort(starting_indices)]
-                ref_name = statnames[0]
-
-                # Loop over the components
-                for comp in self.components:
-                    # Starting time representation is linear polynomial
-                    rep = [['POLY',[1],[0.0]]]
-                    # Get reference array to store everything
-                    data = self.statDict[ref_name][comp]
-                    wgt = self.statDict[ref_name]['w_' + comp]
-                    for current_name in statnames[1:]:
-                        # Get current array
-                        current_data = self.statDict[current_name][comp]
-                        current_wgt = self.statDict[current_name]['w_' + comp]
-                        ind = np.isfinite(current_data).nonzero()[0]
-                        # Store the data and weights
-                        data[ind[0]:] = current_data[ind[0]:]
-                        wgt[ind[0]:] = current_wgt[ind[0]:]
-                        # Add heaviside
-                        rep.append(['STEP',[self.trel[ind[0]]]])
-
-                    # Remove ambiguities for any non-vertical components
-                    if comp != 'up':
-                        # Do least squares on finite data
-                        ind = np.isfinite(data)
-                        G = ts.Timefn(rep, self.trel)[0]
-                        m = np.linalg.lstsq(G[ind,:], data[ind])[0]
-                        # Remove only heaviside parts
-                        data -= np.dot(G[:,2:], m[2:])
-
-                # Remember the stations to delete
-                delete_stat.extend(statnames[1:])
-                
-        # Delete redundant stations
-        for name in delete_stat:
-            del self.statDict[name]
-                    
-        # Some cleanup: remake the station generator
-        self.makeStatGen() 
-        self.transferDictInfo()
-        return 
 
 
     def zeroMeanDisplacements(self):

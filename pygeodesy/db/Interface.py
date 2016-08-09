@@ -40,19 +40,19 @@ class Interface:
         # Loop over the files
         obs_cnt = 0
         print('')
-        for filepath in filelist:
+        for filecnt, filepath in enumerate(filelist):
 
-            if obs_cnt % 100 == 0:
-                sys.stdout.write(' - observation %d\r' % obs_cnt)
+            if filecnt % 100 == 0:
+                sys.stdout.write(' - file %4d / %4d\r' % (filecnt, len(filelist)))
                 sys.stdout.flush()
-
-            # A little string parsing to get the station id
-            statname = self.inst.parse_id(filepath)
-            data['id'].append(statname)
 
             # Load all the data using numpy into an array of strings
             all_data = np.atleast_2d(np.loadtxt(filepath, dtype=bytes).astype(str))
             Nobs = all_data.shape[0]
+
+            # A little string parsing to get the station id
+            statname = self.inst.parse_id(filepath)
+            data['id'].extend(Nobs * [statname])
 
             # Store the observation data to the dictionary
             for comp in self.inst.components:
@@ -74,10 +74,10 @@ class Interface:
                     data['DATE'].append(dtime.datetime(years[i], months[i], days[i], hours[i]))
 
             elif cols['doy'] is not None:
-                doy = all_data[:,cols['doy']].astype(int)
+                doy = all_data[:,cols['doy']]
                 for i in range(Nobs):
                     date = dtime.datetime(years[i], 1, 1)
-                    data['DATE'].append(date + dtime.timedelta(doy[i]-1))
+                    data['DATE'].append(date + dtime.timedelta(int(doy[i])-1))
 
             # Save the file path
             self.engine.addFile(filepath)

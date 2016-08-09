@@ -110,25 +110,6 @@ class TimeSeries:
         return
 
 
-    def loadStationDict(self, inputDict):
-        """
-        Transfers data from a dictionary of station classes to self.
-        """
-        self.clear()
-        for statname, stat in inputDict.items():
-            self.name.append(statname)
-            self.lat.append(stat.lat)
-            self.lon.append(stat.lon)
-            self.elev.append(stat.elev)
-        self.name = np.array(self.name)
-        self.lat,self.lon,self.elev = [np.array(lst) for lst in [self.lat,self.lon,self.elev]]
-        self.nstat = self.lat.size
-        self.statDict = inputDict
-        self.makeStatGen()
-
-        return
-
-
     def loadStationH5(self, h5file, fileout=None, copydict=False):
         """
         Transfers data from an h5py data stack to self.
@@ -208,7 +189,7 @@ class TimeSeries:
         return
 
 
-    def read_metadata_ascii(self, filename, fmtdict, comment='#'):
+    def read_metadata_ascii(self, filename, fmtdict, comment='#', delimeter=None):
         """
         Read coordinate metadata from an ASCII file.
         """
@@ -216,13 +197,23 @@ class TimeSeries:
         if filename is None:
             return
         assert fmtdict is not None, 'Need to specify a format for reading metadata.'
+
+        # Parse the fmtdict string to make a dictionary
+        columns = {}
+        for keyval_str in fmtdict.strip('{}').split(','):
+            key, value = keyval_str.split(':')
+            columns[key.strip()] = int(value)
+
         with open(filename, 'r') as fid:
             for line in fid:
-                data = line.split()
-                self.name.append(data[fmtdict['id']])
-                self.lat.append(data[fmtdict['lat']])
-                self.lon.append(data[fmtdict['lon']])
-                self.elev.append(data[fmtdict['elev']])
+                if delimeter is None:
+                    data = line.split()
+                else:
+                    data = line.split(delimeter)
+                self.name.append(data[columns['id']])
+                self.lat.append(data[columns['lat']])
+                self.lon.append(data[columns['lon']])
+                self.elev.append(data[columns['elev']])
 
         return
 
