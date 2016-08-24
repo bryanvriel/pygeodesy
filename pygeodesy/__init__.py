@@ -10,6 +10,7 @@ from . import network
 from . import db
 from . import instrument
 from . import model
+from . import view
 from .configuration import Configuration
 
 # end of file

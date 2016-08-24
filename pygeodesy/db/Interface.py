@@ -132,14 +132,25 @@ class Interface:
         return
 
 
-    def subset_table(self, idlist, engine_out):
+    def subset_table(self, idlist, engine_out, scale=1.0, tstart=None, tend=None,
+        filelist=[]):
         """
         Subset a raw data table using a list of station IDs, and perform
         an outer join using the dates.
         """
+        # First trim the file list (if provided) to keep only the files associated 
+        # with the list of stations
+        for path in filelist:
+            filename = path.split('/')[-1]
+            for stat_id in idlist:
+                if stat_id in filename:
+                    engine_out.addFile(path)
+
         # Loop over the components
         query = "SELECT DATE, %s, sigma_%s FROM tseries WHERE id = '%s';"
         for component in self.inst.components:
+
+            print('Subsetting component', component)
 
             # Loop over the stations
             data_df = None; sigma_df = None
@@ -165,6 +176,16 @@ class Interface:
             # Set the DATE column to be the index in order to resample
             data_df.index = pd.to_datetime(data_df['DATE'], format='%Y-%m-%d %H:%M:%S.%f')
             sigma_df.index = pd.to_datetime(sigma_df['DATE'], format='%Y-%m-%d %H:%M:%S.%f')
+
+            # Subset data by a time window
+            ind = None
+            if tstart is not None:
+                ind  = data_df.index > np.datetime64(tstart)
+            if tend is not None:
+                ind *= data_df.index < np.datetime64(tend)
+            if ind is not None:
+                data_df = data_df[ind]
+                sigma_df = sigma_df[ind]
 
             # Resample to an evenly spaced date range
             data_df = data_df.resample('D').sum().reset_index()

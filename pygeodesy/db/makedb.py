@@ -14,7 +14,6 @@ import pygeodesy.instrument as instrument
 # Define the default options
 defaults = {
     'columns': None,
-    'format': None,
     'directory': None,
     'dbname': 'data.db',
     'dbtype': 'sqlite',
@@ -23,6 +22,7 @@ defaults = {
     'metafmt': None,
     'chunk_size': 100000,
     'extension': '.neu',
+    'preprocess': False,
 }
 
 

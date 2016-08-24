@@ -8,9 +8,9 @@ import pandas as pd
 import tsinsar as ts
 import shutil
 import h5py
+import sys
 
 from timeutils import datestr2tdec
-from scipy.spatial import cKDTree
 
 
 class Network:
@@ -25,8 +25,8 @@ class Network:
 
         # Initialize the MPI parameters 
         self.comm = comm or MPI.COMM_WORLD
-        self.rank = comm.Get_rank()
-        self.size = comm.Get_size()
+        self.rank = self.comm.Get_rank()
+        self.size = self.comm.Get_size()
 
         if self.rank == 0:
             print('Initializing network')
@@ -43,8 +43,8 @@ class Network:
         self.meta = pd.read_sql_table('metadata', self.engine.engine,
             columns=['id','lat','lon','elev'])
         self.names = self.meta['id'].values
-        for key in ('id', 'lat','lon','elev'):
-            setattr(self, key, self.meta[key].values)
+        for key in ('lat','lon','elev'):
+            setattr(self, key, self.meta[key].values.astype(float))
         self.nstat = len(self.names)
 
         # Save the observation dates
@@ -71,14 +71,26 @@ class Network:
         return
 
 
-    def get(self, component, statid):
+    def get(self, component, statid, scale=1.0, with_date=False):
         """
         Load data for a given component and station ID. Stored as a data frame.
         """
+        # Load data frame
         if type(statid) in (list, tuple, np.ndarray):
-            return pd.read_sql_table(component, self.engine.engine, columns=statid)
-        else:
-            return pd.read_sql_table(component, self.engine.engine, columns=[statid,])
+            cols = ['DATE'] + list(statid) if with_date else statid
+            df = pd.read_sql_table(component, self.engine.engine, columns=cols)
+        elif type(statid) is str:
+            cols = ['DATE', statid] if with_date else [statid,]
+            df = pd.read_sql_table(component, self.engine.engine, columns=cols)
+        elif statid is None:
+            df = pd.read_sql_table(component, self.engine.engine)
+        
+        # Apply scale parameter
+        for key in df:
+            if key != 'DATE':
+                df[key] *= scale
+
+        return df
 
 
     def partitionStations(self, npart=None):
@@ -94,7 +106,7 @@ class Network:
             procN = nominal_load
         istart = self.rank * nominal_load
         self.sub_names = self.names[istart:istart+procN]
-        return
+        return self.comm.allgather(procN)
 
 
     def zeroMeanDisplacements(self):
@@ -109,108 +121,39 @@ class Network:
         return
 
 
-    def resample(self, interp=False, t0=None, tf=None):
-        """
-        Resample data to a common time array.
-        """
-        print('Resampling data')
-        # Loop through stations to find bounding times
-        tmin = 1000.0
-        tmax = 3000.0
-        for statname, stat in self.statGen:
-            tmin_cur = stat['tdec'].min()
-            tmax_cur = stat['tdec'].max()
-            if tmin_cur > tmin:
-                tmin = tmin_cur
-            if tmax_cur < tmax:
-                tmax = tmax_cur
-
-        refflag = False
-        if t0 is not None and tf is not None:
-            refflag = True
-            tref = generateRegularTimeArray(t0, tf)
-            days = tref.size
-            tree = cKDTree(tref.reshape((days,1)), leafsize=2*days)
-        else:
-            tref = generateRegularTimeArray(tmin, tmax)
-            days = tref.size
-
-        # Retrieve data that lies within the common window
-        for statname, stat in self.statGen:
-            tdec = stat['tdec']
-            # List of attributes to loop over
-            components = self.components + ['w_' + comp for comp in self.components]
-            for comp in components:
-                # Get raw data
-                raw_dat = np.array(stat[comp])
-                # Resample using linear interpolation
-                if interp:
-                    resamp_dat = np.interp(tref, tdec, raw_dat)
-                # Or nearest neighbor
-                elif t0 is not None and tf is not None:
-                    resamp_dat = np.nan * np.ones_like(tref)
-                    for i in range(tdec.size):
-                        if tdec[i] < t0 or tdec[i] > tf:
-                            continue
-                        nndist, ind = tree.query(np.array([tdec[i]]), k=1, eps=1.0)
-                        resamp_dat[ind] = raw_dat[i]
-                # Or just getting a window
-                else:
-                    ind = (tdec >= tmin) & (tdec <= tmax)
-                    resamp_dat = raw_dat[ind]
-                # Save
-                stat[comp] = resamp_dat
-            del stat['tdec']
-
-        # Save reference array
-        self.statDict['tdec'] = tref
-        self.tdec = tref
-        # Finally, reset the h5file property
-        self.h5file = self.statDict
-
-        return
-           
-
-    def getDataArrays(self, order='columns', h5=True, components=None):
+    def getDataArrays(self, order='columns', components=None, scale=1.0):
         """
         Traverses the station dictionary to construct regular sized arrays for the
         data and weights.
         """
-        assert self.statDict is not None, 'must load station dictionary first'
 
         # Get first station to determine the number of data points
-        for statname, stat in self.statGen:
-            dat = self.getData(stat, self.components[0])
-            ndat = dat.size
+        for statname in self.names:
+            df = self.get(self.inst.components[0], statname)
+            ndat = df.size
             break 
 
         # Get components to process
-        comps = components or self.components
+        comps = components or self.inst.components
         ncomp = len(comps)
 
         # Construct regular arrays
         nobs = self.nstat * ncomp
-        if self.have_seasonal:
-            seas_coeffs = np.empty((self.npar_seasonal, nobs))
         data = np.empty((ndat, nobs))
         weights = np.empty((ndat, nobs))
 
         # Fill them
         j = 0
         for component in comps:
-            for statname, stat in self.statGen:
-                compDat = self.getData(stat, component)
-                compWeight = self.getData(stat, 'w_' + component)
-                data[:,j] = compDat
-                weights[:,j] = compWeight
-                if self.have_seasonal:
-                    seas_coeffs[:,j] = self.getData(stat, 'seasm_' + component)
+            for statname in self.names:
+                dat_df = self.get(component, statname, scale=scale)
+                sig_df = self.get('sigma_' + component, statname, scale=1.0/scale)
+                data[:,j] = dat_df[statname].values
+                weights[:,j] = 1.0 / sig_df[statname].values
                 j += 1
 
         # Custom packaging
         return_arrs = [data, weights]
-        if self.have_seasonal:
-            return_arrs.append(seas_coeffs)
         if order == 'rows':
             return_arrs = [arr.T.copy() for arr in return_arrs]
         return return_arrs
@@ -221,10 +164,6 @@ class Network:
         Computes the network-dependent spatial weighting based on station/ground locations.
         """
         import topoutil as tu
-
-        # Check station ordering is consistent
-        names = [name for name, stat in self.statGen]
-        assert names == self.name.tolist(), 'Inconsistent station name list w/ statGen.'
 
         # Allocate array for storing weights
         dist_weight = np.zeros((self.nstat, self.nstat))
@@ -245,11 +184,70 @@ class Network:
                 # Mean distance to 3 nearest neighbors multipled by a smoothing factor
                 Lc = smooth * np.mean(np.sort(stat_dist)[1:1+n_neighbor])
                 dist_weight[i,:] = np.exp(-stat_dist / Lc)
-                print(' - scale length at', self.name[i], ':', 0.001 * Lc, 'km')
+                print(' - scale length at', self.names[i], ':', 0.001 * Lc, 'km')
             else:
                 dist_weight[i,:] = np.exp(-stat_dist / L0)
 
         return dist_weight
+
+
+    def preprocess(self, engine_out):
+        """
+        Read header from saved file list to remove offsets from time series.
+        """
+        # Import necessary GIAnT utilities
+        import tsinsar as ts
+        import tsinsar.sopac as sopac
+
+        # Initialize data frames for each components
+        frames = {}
+        for component in self.inst.components:
+            frames[component] = None
+
+        # Loop over the files
+        for filepath in self.engine.getUniqueFiles():
+
+            fname = filepath.split('/')[-1]
+            statid = fname[:4]
+            print('Cleaning station', statid)
+            
+            # Create sopac model to read the header 
+            smodel = sopac.sopac(filepath)
+
+            # Loop over the components
+            for component in self.inst.components:
+        
+                # Get the data
+                data = self.get(component, statid, with_date=True)
+
+                # Remove offsets if applicable
+                frep = getattr(smodel, component).offset
+                if len(frep) > 1:
+                    # Get representations and amps
+                    rep = [crep.rep for crep in frep]
+                    amp = [crep.amp for crep in frep]
+
+                    # Construct model and remove from data
+                    G = ts.Timefn(rep, self.tdec)[0]
+                    fit = np.dot(G, amp)
+                    data[statid] -= fit
+
+                # Merge results
+                if frames[component] is None:
+                    frames[component] = data
+                else:
+                    frames[component] = pd.merge(frames[component], data,
+                        how='outer', on='DATE')
+
+        # Write to SQL database
+        for component in self.inst.components:
+            # Write data
+            frames[component].to_sql(component, engine_out.engine, if_exists='replace')
+            # Read and write sigmas
+            sigma_df = pd.read_sql_table('sigma_' + component, self.engine.engine)
+            sigma_df.to_sql('sigma_' + component, engine_out.engine, if_exists='replace')
+
+        return
 
 
     def filterData(self, kernel_size, mask=False, statnames=[]):

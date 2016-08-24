@@ -24,10 +24,27 @@ def parse():
     subnet.add_argument('-cfg', action='store', default='data.cfg',
         help='Subset network configuration file. Default: data.cfg.')
 
-    # Option for detrend
+    # Options for clean
+    clean = subparsers.add_parser('clean', 
+        help='Use header data from files to remove offsets from data.')
+    clean.add_argument('-cfg', action='store', default='data.cfg',
+        help='Cleaning configuration file. Default: data.cfg.')
+
+    # Options for detrend
     detrend = subparsers.add_parser('detrend', help='Detrend time series in database.')
     detrend.add_argument('-cfg', action='store', default='data.cfg',
         help='Detrend configuration file. Default: data.cfg.')
+
+    # Options for elasticnet
+    elasticnet = subparsers.add_parser('elasticnet', 
+        help='Perform elastic net decomposition on database.')
+    elasticnet.add_argument('-cfg', action='store', default='data.cfg',
+        help='Elastic Net configuration file. Default: data.cfg.')
+
+    # Options for plotting
+    plot = subparsers.add_parser('plot', help='Plot time series for specified stations.')
+    plot.add_argument('-cfg', action='store', default='plot.cfg',
+        help='Plotting configuration file. Default: plot.cfg.')
 
     return parser.parse_args()
     
@@ -37,18 +54,29 @@ if __name__ == '__main__':
     # Get the command line options
     inputs = parse()
 
-    # Parse the configuration file for the given module
-    config = pg.Configuration(inputs.cfg, inputs.module)
+    if inputs.module in ['makedb', 'subnet', 'clean', 'detrend', 'elasticnet', 'plot']:
 
-    # Run the appropriate module
-    if inputs.module == 'makedb':
-        pg.db.makedb(config())
+        # Parse the configuration file for the given module
+        config = pg.Configuration(inputs.cfg, inputs.module)
 
-    elif inputs.module == 'subnet':
-        pg.db.subnet(config())
+        # Run the appropriate module
+        if inputs.module == 'makedb':
+            pg.db.makedb(config())
 
-    elif inputs.module == 'detrend':
-        pg.network.detrend(config())
+        elif inputs.module == 'subnet':
+            pg.db.subnet(config())
+
+        elif inputs.module == 'clean':
+            pg.network.clean(config())
+
+        elif inputs.module == 'detrend':
+            pg.network.detrend(config())
+
+        elif inputs.module == 'elasticnet':
+            pg.network.elasticnet(config())
+
+        elif inputs.module == 'plot':
+            pg.view.plot(config())
 
     else:
         print('Module', inputs.module, 'is not supported')

@@ -17,6 +17,8 @@ defaults = {
     'output': 'sqlite:///sub.db',
     'poly': None,
     'list': None,
+    'tstart': None,
+    'tend': None,
 }
 
 
@@ -31,6 +33,8 @@ def subnet(optdict):
 
     # And for output engine
     engine_out = Engine(url=opts['output'])
+    # Also initialize it
+    engine_out.initdb(new=True)
 
     # Initialize an instrument
     inst = instrument.select(opts['type'])
@@ -41,6 +45,9 @@ def subnet(optdict):
     # Read metadata from input table
     meta = engine.meta()
     names = meta['id'].values
+
+    # Get list of files 
+    files = engine.getUniqueFiles()
 
     # Use polynomial for a mask
     if opts['poly'] is not None:
@@ -72,7 +79,8 @@ def subnet(optdict):
     meta_sub.to_sql('metadata', engine_out.engine, if_exists='replace')
 
     # Subset the data table using station list
-    interface.subset_table(stations, engine_out)
+    interface.subset_table(stations, engine_out, tstart=opts['tstart'], 
+        tend=opts['tend'], filelist=files)
     
 
 # end of file

@@ -1,6 +1,7 @@
 #-*- coding: utf-8 -*-
 
 import numpy as np
+import matplotlib.pyplot as plt
 from mpi4py import MPI
 import pandas as pd
 import sys
@@ -11,7 +12,7 @@ import pygeodesy.instrument as instrument
 from pygeodesy.model import Model
 
 from giant.utilities import timefn
-from giant.solvers import RidgeRegression
+import giant.solvers as solvers
 
 # Define the default options
 defaults = {
@@ -27,7 +28,9 @@ defaults = {
     'output_phase': None,
     'output_amp': None,
     'user': 'userCollection.py',
-    'iter': 1
+    'iter': 1,
+    'solver': 'RidgeRegression',
+    'scale': 1.0,
 }
 
 
@@ -68,7 +71,12 @@ def detrend(optdict):
     model = Model(network.dates, collection=collection)
 
     # Create a solver
-    solver = RidgeRegression(model.reg_indices, float(opts['penalty']), regMat=iCm)
+    try:
+        Solver = getattr(solvers, opts['solver'])
+        solver = Solver(model.reg_indices, float(opts['penalty']), regMat=iCm)
+    except AttributeError:
+        print('Specified solver not supported.')
+        sys.exit()
 
     # Determine which components to remove
     parts_to_remove = [s.strip() for s in opts['remove'].split(',')]
@@ -99,6 +107,10 @@ def detrend(optdict):
         seasonal_dat = {}
         for statname in network.sub_names:
 
+            # Scale data
+            data_df[statname] *= float(opts['scale'])
+            #sigma_df[statname] /= float(opts['scale'])
+
             # Get the data (by reference) for this component and station
             dat = data_df[statname].values
             wgt = 1.0 / sigma_df[statname].values
@@ -127,7 +139,7 @@ def detrend(optdict):
                     break
 
                 # Perform least squares
-                mvec = model.invert(solver, dat, wgt=wgt)
+                mvec = model.invert(solver, dat)#, wgt=wgt)
 
                 # Model performs reconstruction
                 recon = model.predict(mvec)

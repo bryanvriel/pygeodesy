@@ -6,13 +6,7 @@ import sys
 
 def configuration(parent_package='', top_path=None):
     from numpy.distutils.misc_util import Configuration
-    config = Configuration('pygeodesy', parent_package, top_path)
-    config.add_subpackage('db')
-    config.add_subpackage('network')
-    config.add_subpackage('instrument')
-    config.add_subpackage('model')
-    config.add_subpackage('view')
-    config.make_config_py()
+    config = Configuration('view', parent_package, top_path)
     return config
 
 

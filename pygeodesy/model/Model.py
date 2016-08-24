@@ -130,12 +130,15 @@ class Model:
         seasonal = np.dot(self.G[:,self.iseasonal], mvec[self.iseasonal])
         transient = np.dot(self.G[:,self.itransient], mvec[self.itransient])
 
-        # Compute uncertainty of the estimation
-        sigma = np.sqrt(np.diag(np.dot(self.G, np.dot(self.Cm, self.G.T))))
-        
         # Compute the functional partitions
         results = {'secular': secular, 'seasonal': seasonal, 'transient': transient,
-                'full': secular + seasonal + transient, 'sigma': sigma}
+                'full': secular + seasonal + transient}
+
+        # Add uncertainty if applicable
+        if hasattr(self, 'Cm'):
+            sigma = np.sqrt(np.diag(np.dot(self.G, np.dot(self.Cm, self.G.T))))
+            results['sigma'] = sigma
+
         return results
 
 
