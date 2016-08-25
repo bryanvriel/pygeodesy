@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from .Station import STN
 from scipy.spatial import cKDTree
-import SparseConeQP as sp
 from matutils import dmultl, dmultr
 from timeutils import generateRegularTimeArray
 import datetime as dtime
