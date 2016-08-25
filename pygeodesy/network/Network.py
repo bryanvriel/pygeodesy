@@ -10,7 +10,7 @@ import shutil
 import h5py
 import sys
 
-from timeutils import datestr2tdec
+from ..utilities import datestr2tdec
 
 
 class Network:

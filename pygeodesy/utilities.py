@@ -271,4 +271,32 @@ def dmultr(mat, dvec):
     res = dvec*mat
     return res   
 
+
+def datestr2tdec(yy=0, mm=0, dd=0, hour=0, minute=0, sec=0, microsec=0,
+                 datestr=None, pydtime=None):
+    """
+    Convert year, month, day, hours, minutes, seconds to decimal year.
+    """
+    if datestr is not None:
+        yy, mm, dd = [int(val) for val in datestr.split('-')]
+        hour, minute, sec = [0, 0, 0]
+
+    if pydtime is not None:
+        attrs = ['year', 'month', 'day', 'hour', 'minute', 'second']
+        yy, mm, dd, hour, minute, sec = [getattr(pydtime, attr) for attr in attrs]
+
+
+    # Make datetime object for start of year
+    yearStart = datetime.datetime(yy, 1, 1, 0, 0, 0)
+    # Make datetime object for input time
+    current = datetime.datetime(yy, mm, dd, hour, minute, sec, microsec)
+    # Compute number of days elapsed since start of year
+    tdelta = current - yearStart
+    # Convert to decimal year and account for leap year
+    if yy % 4 == 0:
+        return float(yy) + tdelta.total_seconds() / (366.0 * 86400)
+    else:
+        return float(yy) + tdelta.total_seconds() / (365.0 * 86400)
+
+
 # end of file 
