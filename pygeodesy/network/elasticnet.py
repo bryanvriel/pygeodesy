@@ -8,8 +8,6 @@ import pygeodesy.instrument as instrument
 from .Network import Network
 from .utils import *
 
-from pyadmm.mpi.solver import ADMMSolver
-
 # Define the default options
 defaults = {
     'input': None,
@@ -32,6 +30,8 @@ defaults = {
 
 
 def elasticnet(optdict):
+
+    from pyadmm.mpi.solver import ADMMSolver
 
     # Update the options
     opts = defaults.copy()

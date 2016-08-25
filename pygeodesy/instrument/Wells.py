@@ -8,7 +8,7 @@ import h5py
 import sys
 import os
 
-from timeutils import datestr2tdec
+from ..utilities import datestr2tdec
 from .TimeSeries import TimeSeries
 
 class Wells(TimeSeries):
