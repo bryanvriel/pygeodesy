@@ -5,14 +5,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from .Station import STN
 from scipy.spatial import cKDTree
-from matutils import dmultl, dmultr
-from timeutils import generateRegularTimeArray
 import datetime as dtime
 import tsinsar as ts
 import sys, os
 
 from .TimeSeries import TimeSeries
 from .utils import xyz2llh
+from ..utilities import dmultl, dmultr
 
 class GPS(TimeSeries):
     """
