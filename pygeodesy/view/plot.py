@@ -32,8 +32,11 @@ def plot(optdict):
     opts.update(optdict)
 
     # Map matplotlib color coes to the seaborn palette
-    import seaborn as sns
-    #sns.set_color_codes()
+    try:
+        import seaborn as sns
+        sns.set_color_codes()
+    except ImportError:
+        pass
 
     # Create engine for input database
     engine = Engine(url=opts['input'])

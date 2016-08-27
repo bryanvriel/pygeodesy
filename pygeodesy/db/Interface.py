@@ -138,6 +138,7 @@ class Interface:
         Subset a raw data table using a list of station IDs, and perform
         an outer join using the dates.
         """
+        print('\nSubsetting network to %d stations' % len(idlist))
         # First trim the file list (if provided) to keep only the files associated 
         # with the list of stations
         for path in filelist:
@@ -150,7 +151,7 @@ class Interface:
         query = "SELECT DATE, %s, sigma_%s FROM tseries WHERE id = '%s';"
         for component in self.inst.components:
 
-            print('Subsetting component', component)
+            print('- subsetting component', component)
 
             # Loop over the stations
             data_df = None; sigma_df = None

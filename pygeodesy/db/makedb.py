@@ -34,7 +34,7 @@ def makedb(optdict):
 
     # Read list of files or build
     if opts['directory'] is None and opts['filelist'] is not None:
-        filelist = np.loadtxt(opts.filelist, dtype=bytes).astype(str)
+        filelist = np.loadtxt(opts['filelist'], dtype=bytes).astype(str)
     elif opts['directory'] is not None and opts['filelist'] is None:
         fname = buildFileList(opts['directory'], opts['format'], opts['extension'])
         filelist = np.loadtxt(fname, dtype=bytes).astype(str)

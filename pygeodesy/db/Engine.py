@@ -4,6 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy_utils import database_exists, drop_database, create_database
 import pandas as pd
 import numpy as np
+import sys
 
 
 class Engine:
@@ -46,9 +47,10 @@ class Engine:
         # If new database is requested, drop any existing database
         if new and database_exists(self.url):
             drop_database(self.url)
-        create_database(self.url)
+            create_database(self.url)
         # Initialize file list table
-        pd.io.sql.execute("CREATE TABLE files(path TEXT);", self.engine)
+        if 'files' not in self.tables(asarray=True):
+            pd.io.sql.execute("CREATE TABLE files(path TEXT);", self.engine)
         # If a reference engine is provided, copy over necessary bits
         if ref_engine is not None:
             meta = ref_engine.meta()

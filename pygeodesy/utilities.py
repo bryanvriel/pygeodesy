@@ -277,6 +277,7 @@ def datestr2tdec(yy=0, mm=0, dd=0, hour=0, minute=0, sec=0, microsec=0,
     """
     Convert year, month, day, hours, minutes, seconds to decimal year.
     """
+    import datetime
     if datestr is not None:
         yy, mm, dd = [int(val) for val in datestr.split('-')]
         hour, minute, sec = [0, 0, 0]

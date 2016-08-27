@@ -30,6 +30,18 @@ def parse():
     clean.add_argument('-cfg', action='store', default='data.cfg',
         help='Cleaning configuration file. Default: data.cfg.')
 
+    # Options for cme
+    cme = subparsers.add_parser('cme', 
+        help='Perform common mode estimation on data.')
+    cme.add_argument('-cfg', action='store', default='data.cfg',
+        help='CME configuration file. Default: data.cfg.')
+
+    # Options for filter
+    filter = subparsers.add_parser('filter', 
+        help='Filter data to a specified window size.')
+    filter.add_argument('-cfg', action='store', default='data.cfg',
+        help='Filter configuration file. Default: data.cfg.')
+
     # Options for detrend
     detrend = subparsers.add_parser('detrend', help='Detrend time series in database.')
     detrend.add_argument('-cfg', action='store', default='data.cfg',
@@ -54,7 +66,8 @@ if __name__ == '__main__':
     # Get the command line options
     inputs = parse()
 
-    if inputs.module in ['makedb', 'subnet', 'clean', 'detrend', 'elasticnet', 'plot']:
+    if inputs.module in ['makedb', 'subnet', 'clean', 'cme', 'filter', 'detrend', 
+        'elasticnet', 'plot']:
 
         # Parse the configuration file for the given module
         config = pg.Configuration(inputs.cfg, inputs.module)
@@ -68,6 +81,12 @@ if __name__ == '__main__':
 
         elif inputs.module == 'clean':
             pg.network.clean(config())
+
+        elif inputs.module == 'filter':
+            pg.network.filter(config())
+
+        elif inputs.module == 'cme':
+            pg.network.cme(config())
 
         elif inputs.module == 'detrend':
             pg.network.detrend(config())

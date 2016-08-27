@@ -74,6 +74,9 @@ def subnet(optdict):
         # Keep ones that are in the database
         stations = np.intersect1d(input_stations, names)
 
+    else:
+        assert False, 'Must input list of stations or polynomial.'
+
     # Subset metadata and write to table
     meta_sub = meta[np.in1d(names, stations)].reset_index(drop=True)
     meta_sub.to_sql('metadata', engine_out.engine, if_exists='replace')

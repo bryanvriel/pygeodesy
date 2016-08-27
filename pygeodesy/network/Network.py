@@ -83,7 +83,8 @@ class Network:
             cols = ['DATE', statid] if with_date else [statid,]
             df = pd.read_sql_table(component, self.engine.engine, columns=cols)
         elif statid is None:
-            df = pd.read_sql_table(component, self.engine.engine)
+            cols = ['DATE'] + list(self.names) if with_date else self.names
+            df = pd.read_sql_table(component, self.engine.engine, columns=cols)
         
         # Apply scale parameter
         for key in df:
@@ -250,7 +251,8 @@ class Network:
         return
 
 
-    def filterData(self, kernel_size, mask=False, statnames=[]):
+    def filterData(self, engine_out, kernel_size, mask=False, remove_outliers=False,
+        nstd=5):
         """
         Call median filter function.
         """
@@ -259,43 +261,60 @@ class Network:
         if kernel_size % 2 == 0:
             kernel_size += 1
         print('Window of integer size', kernel_size)
-        if len(statnames) == 0:
-            statnames = self.name
 
-        pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=self.nstat).start()
-        for scnt, (statname, stat) in enumerate(self.statGen):
-            if statname not in statnames:
-                continue
-            for comp in self.components:
-                dat = np.array(stat[comp])
-                wgt = np.array(stat['w_' + comp])
-                filtered = self.adaptiveMedianFilt(dat, kernel_size)
+        # Loop over the data
+        for component in self.inst.components:
+
+            # Get data for this component
+            comp_df = self.get(component, None, with_date=True)
+            N = comp_df.shape[0]
+
+            # Make a copy for filtered results
+            filt_df = comp_df.copy()
+
+            # Make a progress bar for the stations
+            keep_stat = ['DATE']
+            pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=self.nstat).start()
+            for scnt, statname in enumerate(self.names):
+                # Get the data
+                data = comp_df[statname]
+                # Skip if all NaN
+                if data.isnull().sum() == N:
+                    continue
+                # Filter
+                filtered = self.adaptiveMedianFilt(data.values, kernel_size)
+                # mask
                 if mask:
-                    ind = np.isnan(dat) * np.isnan(wgt)
-                    filtered[ind] = np.nan
-                stat['filt_' + comp] = filtered
-            pbar.update(scnt + 1)
-        pbar.finish()
-       
+                    filtered[np.isnan(data)] = np.nan
+                # Remove outliers
+                if remove_outliers:
+                    residual = data.values - filtered
+                    std = np.nanstd(residual)
+                    comp_df.loc[residual > 5*std,statname] = np.nan
+                filt_df[statname] = filtered                
+                keep_stat.append(statname)
+                pbar.update(scnt + 1)
+            pbar.finish()
+
+            # Write data to database
+            comp_df[keep_stat].to_sql(component, engine_out.engine, if_exists='replace')
+            filt_df[keep_stat].to_sql('filt_' + component, 
+                engine_out.engine, if_exists='replace')
+
+            # Read and write sigmas
+            sigma_df = pd.read_sql_table('sigma_' + component, self.engine.engine)
+            sigma_df.to_sql('sigma_' + component, engine_out.engine, if_exists='replace')
+
         return
 
 
-    def decompose(self, n_comp=1, plot=False, method='pca', dmod='', remove=False):
+    def decompose(self, engine_out, n_comp=1, plot=True, method='pca', 
+        remove=False):
         """
         Peform principal component analysis on a stack of time series.
         """
 
-        # First fill matrices with zero-mean time series for PCA
-        Adict = {}
-        for comp in self.components:
-            Adict[comp] = np.zeros((self.tdec.size, self.nstat))
-            for j, (statname, stat) in enumerate(self.statGen):
-                dat = np.array(stat[dmod + comp])
-                dat -= np.nanmean(dat)
-                ind = np.isnan(dat).nonzero()[0]
-                dat[ind] = np.nanstd(dat) * np.random.randn(len(ind))
-                Adict[comp][:,j] = dat
-
+        # Create the decomposer
         from sklearn.decomposition import FastICA, PCA
         if method == 'pca':
             decomposer = PCA(n_components=n_comp, whiten=False)
@@ -305,16 +324,31 @@ class Network:
             raise NotImplementedError('Unsupported decomposition method')
         
         # Now decompose the time series
-        spatial = {}
-        temporal = {}
-        model = {}
-        for comp in self.components:
-            temporal[comp] = decomposer.fit_transform(Adict[comp])
+        temporal = {}; spatial = {}; model = {}
+        for component in self.inst.components:
+
+            # Retrieve component data frame
+            comp_df = self.get(component, None, with_date=False)
+            filt_df = self.get('filt_' + component, None, with_date=False)
+
+            # First loop over the stations to compute residuals; fill
+            # gaps with random noise
+            for statname in self.names:
+                data = comp_df[statname].values
+                filt = filt_df[statname].values
+                residual = data - filt
+                residual -= np.nanmean(residual)
+                ind = np.isnan(residual).nonzero()[0]
+                residual[ind] = np.nanstd(residual) * np.random.randn(len(ind))
+                comp_df[statname] = residual
+
+            # Perform decomposition
+            temporal[component] = decomposer.fit_transform(comp_df.values)
             if method == 'pca':
-                spatial[comp] = decomposer.components_.squeeze()
-                model[comp] = decomposer.inverse_transform(temporal[comp])
+                spatial[component] = decomposer.components_.squeeze()
+                model[component] = decomposer.inverse_transform(temporal[component])
             elif method == 'ica':
-                spatial[comp] = decomposer.mixing_[:,n_comp-1].squeeze()
+                spatial[component] = decomposer.mixing_[:,n_comp-1].squeeze()
 
         if plot:
             import matplotlib.pyplot as plt
@@ -328,6 +362,7 @@ class Network:
             ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'],
                 scale=1.0)
             plt.show()
+            sys.exit()
 
         if remove:
             for comp in self.components:
@@ -362,25 +397,30 @@ class Network:
         """
         assert kernel_size % 2 == 1, 'kernel_size must be odd'
 
-        nobs = dat.size
-        filt_data = np.nan * np.ones_like(dat)
+        # Run filtering while suppressing warnings
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', 'All-NaN slice encountered')
 
-        # Beginning region
-        halfWindow = 0
-        for i in range(kernel_size//2):
-            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
-            halfWindow += 1
+            nobs = dat.size
+            filt_data = np.nan * np.ones_like(dat)
 
-        # Middle region
-        halfWindow = kernel_size // 2
-        for i in range(halfWindow, nobs - halfWindow):
-            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+            # Beginning region
+            halfWindow = 0
+            for i in range(kernel_size//2):
+                filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+                halfWindow += 1
 
-        # Ending region
-        halfWindow -= 1
-        for i in range(nobs - halfWindow, nobs):
-            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+            # Middle region
+            halfWindow = kernel_size // 2
+            for i in range(halfWindow, nobs - halfWindow):
+                filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+
+            # Ending region
             halfWindow -= 1
+            for i in range(nobs - halfWindow, nobs):
+                filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+                halfWindow -= 1
 
         return filt_data
 
