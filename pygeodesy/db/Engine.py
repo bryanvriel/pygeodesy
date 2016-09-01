@@ -55,7 +55,7 @@ class Engine:
         if ref_engine is not None:
             meta = ref_engine.meta()
             meta.to_sql('metadata', self.engine, if_exists='replace')
-            file_df = pd.read_sql_table('files', ref_engine.engine)
+            file_df = pd.read_sql_table('files', ref_engine.engine, columns=['path',])
             file_df.to_sql('files', self.engine, if_exists='replace')
             
         return
@@ -92,6 +92,41 @@ class Engine:
         return metadata
 
 
+    def updateMeta(self, statlist):
+        """
+        Update metadata with list subset.
+        """
+        # Compare ID list
+        meta_ref = self.meta()
+        names = meta_ref['id'].values
+        ind = np.in1d(names, statlist)
+        num_good_stat = len(ind.nonzero()[0])
+
+        # If changes need to be made
+        if num_good_stat != len(names):
+
+            # Subset the metadata            
+            meta_sub = meta_ref.loc[ind,:].reset_index()
+
+            # Update the filelist
+            file_df = pd.read_sql_table('files', self.engine, columns=['path',])
+            keep_file = []
+            for index, path in enumerate(file_df['path']):
+                filename = path.split('/')[-1].lower()
+                for stat_id in statlist:
+                    if stat_id in filename:
+                        keep_file.append(index)
+
+            # Write to database
+            meta_sub.to_sql('metadata', self.engine, if_exists='replace')
+            file_df = file_df.loc[keep_file].reset_index()
+            file_df.to_sql('files', self.engine, if_exists='replace')
+            
+            return meta_sub, True
+        else:
+            return None, False
+
+
     def dates(self):
         """
         Return an array of dates.
@@ -105,8 +140,12 @@ class Engine:
         """
         Add file path to files table.
         """
-        pd.io.sql.execute('INSERT INTO files(path) VALUES(?);', 
-            self.engine, params=[(filepath,)])
+        if isinstance(filepath, list):
+            df = pd.DataFrame({'path': filepath})
+            df.to_sql('files', self.engine, if_exists='replace')
+        elif isinstance(filepath, str):
+            pd.io.sql.execute('INSERT INTO files(path) VALUES(?);', 
+                self.engine, params=[(filepath,)])
         return
 
 

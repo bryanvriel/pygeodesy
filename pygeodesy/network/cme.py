@@ -21,6 +21,8 @@ defaults = {
     'remove': True,
     'method': 'pca',
     'num_components': 1,
+    'beta': 1.0,
+    'max_step': 30,
 }
 
 
@@ -45,8 +47,12 @@ def cme(optdict):
     network = Network(inst, engine)
 
     # Common mode estimation
-    network.decompose(engine_out, n_comp=int(opts['num_components']), 
-        method=opts['method'].lower(), remove=opts['remove'])
+    if opts['method'] in ['als', 'ALS']:
+        network.decompose_ALS(engine_out, n_comp=int(opts['num_components']), remove=True,
+            plot=True, beta=float(opts['beta']), max_step=int(opts['max_step']))
+    else:
+        network.decompose(engine_out, n_comp=int(opts['num_components']), 
+            method=opts['method'].lower(), remove=opts['remove'])
         
 
 # end of file

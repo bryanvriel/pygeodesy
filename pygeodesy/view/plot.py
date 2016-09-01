@@ -110,7 +110,7 @@ def plot(optdict):
 
         elif filt_comp in tables:
             fit = pd.read_sql_query("SELECT %s FROM filt_%s;" % (statname, component),
-                engine.engine)
+                engine.engine).values.squeeze()
 
         # Remove means
         dat_mean = np.nanmean(data)
@@ -121,6 +121,7 @@ def plot(optdict):
         fig, ax = plt.subplots(figsize=figsize)
         line, = ax.plot(dates, data, 'o', alpha=0.6)
         ax.plot(dates, fit, '-r', linewidth=6)
+        #ax.plot(dates, data - fit, 'o', alpha=0.6)
         ax.tick_params(labelsize=18)
         ax.set_xlabel('Year', fontsize=18)
         ax.set_ylabel(component, fontsize=18)

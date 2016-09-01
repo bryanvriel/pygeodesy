@@ -132,8 +132,8 @@ class Interface:
         return
 
 
-    def subset_table(self, idlist, engine_out, scale=1.0, tstart=None, tend=None,
-        filelist=[]):
+    def subset_table(self, idlist, engine_out, tstart=None, tend=None,
+        filelist=[], scale=1.0):
         """
         Subset a raw data table using a list of station IDs, and perform
         an outer join using the dates.
@@ -141,11 +141,15 @@ class Interface:
         print('\nSubsetting network to %d stations' % len(idlist))
         # First trim the file list (if provided) to keep only the files associated 
         # with the list of stations
+        print(' - subsetting files first')
+        files = []
         for path in filelist:
-            filename = path.split('/')[-1]
+            filename = path.split('/')[-1].lower()
             for stat_id in idlist:
                 if stat_id in filename:
-                    engine_out.addFile(path)
+                    files.append(path)
+        engine_out.addFile(files)
+        del files
 
         # Loop over the components
         query = "SELECT DATE, %s, sigma_%s FROM tseries WHERE id = '%s';"
@@ -166,6 +170,10 @@ class Interface:
                 # Use station name in columns as a unique identifier
                 new_data_df.columns = ['DATE', statname]
                 new_sigma_df.columns = ['DATE', statname]
+
+                # Scale the data
+                new_data_df[statname].values[:] *= scale
+                new_sigma_df[statname].values[:] *= scale
 
                 # Merge results
                 if data_df is None:

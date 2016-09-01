@@ -19,6 +19,7 @@ defaults = {
     'list': None,
     'tstart': None,
     'tend': None,
+    'scale': 1.0,
 }
 
 
@@ -83,7 +84,7 @@ def subnet(optdict):
 
     # Subset the data table using station list
     interface.subset_table(stations, engine_out, tstart=opts['tstart'], 
-        tend=opts['tend'], filelist=files)
+        tend=opts['tend'], filelist=files, scale=float(opts['scale']))
     
 
 # end of file

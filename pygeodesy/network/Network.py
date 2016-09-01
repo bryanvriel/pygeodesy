@@ -94,6 +94,20 @@ class Network:
         return df
 
 
+    def updateMetadata(self, statlist, engine):
+        """
+        Compare the station list to check if we need to re-write metadata.
+        """
+        meta_new, update_status = engine.updateMeta(statlist)
+        if update_status:
+            self.meta = meta_new
+            self.names = self.meta['id'].values
+            for key in ('lat','lon','elev'):
+                setattr(self, key, self.meta[key].values.astype(float))
+            self.nstat = len(self.names)
+        return
+
+
     def partitionStations(self, npart=None):
         """
         Create equal partitions of stations in the network. Using the MPI
@@ -252,7 +266,7 @@ class Network:
 
 
     def filterData(self, engine_out, kernel_size, mask=False, remove_outliers=False,
-        nstd=5):
+        nstd=5, std_thresh=100.0):
         """
         Call median filter function.
         """
@@ -273,7 +287,7 @@ class Network:
             filt_df = comp_df.copy()
 
             # Make a progress bar for the stations
-            keep_stat = ['DATE']
+            keep_stat = []
             pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=self.nstat).start()
             for scnt, statname in enumerate(self.names):
                 # Get the data
@@ -290,13 +304,19 @@ class Network:
                 if remove_outliers:
                     residual = data.values - filtered
                     std = np.nanstd(residual)
+                    if std > std_thresh:
+                        continue
                     comp_df.loc[residual > 5*std,statname] = np.nan
                 filt_df[statname] = filtered                
                 keep_stat.append(statname)
                 pbar.update(scnt + 1)
             pbar.finish()
 
+            # Update metadata if list of good stations has changed
+            self.updateMetadata(keep_stat, engine_out)
+
             # Write data to database
+            keep_stat = ['DATE'] + keep_stat
             comp_df[keep_stat].to_sql(component, engine_out.engine, if_exists='replace')
             filt_df[keep_stat].to_sql('filt_' + component, 
                 engine_out.engine, if_exists='replace')
@@ -360,7 +380,10 @@ class Network:
             ax2.plot(self.tdec, temporal['north'], '-b')
             ax3.plot(self.tdec, temporal['up'], '-b')
             ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'],
-                scale=1.0)
+                scale=0.1)
+            for lon,lat,name in zip(self.lon,self.lat,self.names):
+                ax4.annotate(name, xy=(lon,lat))
+            
             plt.show()
             sys.exit()
 
@@ -373,6 +396,65 @@ class Network:
                     dat -= A[:,j]
                     filt_var = np.nanstd(dat)**2
                     print('%s-%s variance reduction: %f' % (statname, comp, filt_var/raw_var))
+        
+        return
+
+
+    def decompose_ALS(self, engine_out, n_comp=1, plot=True, remove=False,
+        beta=1.0, max_step=30):
+        """
+        Peform principal component analysis on a stack of time series.
+        """
+
+        from .utils import ALS_factor
+        
+        # Now decompose the time series
+        temporal = {}; spatial = {}; model = {}
+        for component in self.inst.components:
+
+            print(' - ALS for %s component' % component)
+
+            # Retrieve component data frame
+            comp_df = self.get(component, None, with_date=False)
+            filt_df = self.get('filt_' + component, None, with_date=False)
+            residual = comp_df.values - filt_df.values
+            for j in range(residual.shape[1]):
+                residual[:,j] -= np.nanmean(residual[:,j])
+            
+            # Perform decomposition
+            tempMat, spatMat, errors = ALS_factor(residual, beta, 
+                num_features=n_comp, max_step=max_step)
+
+            # Save
+            temporal[component] = tempMat.squeeze()
+            spatial[component] = spatMat.squeeze()
+            model[component] = np.dot(tempMat, spatMat.T)
+            
+        if plot:
+            import matplotlib.pyplot as plt
+            fig = plt.figure(figsize=(16,10))
+            ax1 = plt.subplot2grid((3,2), (0,0))
+            ax2 = plt.subplot2grid((3,2), (1,0))
+            ax3 = plt.subplot2grid((3,2), (2,0))
+            ax4 = plt.subplot2grid((3,2), (0,1), rowspan=3)
+            ax1.plot(self.tdec, temporal['east'], '-b')
+            ax2.plot(self.tdec, temporal['north'], '-b')
+            ax3.plot(self.tdec, temporal['up'], '-b')
+            ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'], scale=10.0)
+            for lon,lat,name in zip(self.lon,self.lat,self.names):
+                ax4.annotate(name, xy=(lon,lat))
+            plt.savefig('results_cme_als.png', dpi=200, bbox_inches='tight')
+            #plt.show()
+            #sys.exit()
+
+        if remove:
+            for component in self.inst.components:
+                A = model[component]
+                comp_df = self.get(component, None, with_date=True)
+                comp_df.to_sql(component, engine_out.engine, if_exists='replace')
+                for cnt, statname in enumerate(self.names):
+                    comp_df.loc[:,statname] -= A[:,cnt]
+                comp_df.to_sql('filt_' + component, engine_out.engine, if_exists='replace')
         
         return
 

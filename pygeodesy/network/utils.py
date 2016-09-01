@@ -279,6 +279,59 @@ def updatePenalties(solver, opts, model, rank, component):
         saveData(solver, model, rank, component)
 
     return
+
+
+def ALS_factor(A, beta, num_features=None, max_step=30):
+
+    # Determine problem size
+    nobs, nstat = A.shape
+    n_feat = num_features or nstat
+
+    # Initial values are random numbers
+    spatialMat = np.random.standard_normal((nstat,n_feat))
+    temporalMat = np.random.standard_normal((nobs,n_feat))
+    betaReg = beta * np.eye(n_feat)
+
+    # Train
+    step = 0
+    errors = []
+    while step < max_step:
+
+        # Construct problem matrix for spatial components
+        lhs = np.dot(temporalMat.T, temporalMat)
+        rhs = np.zeros((n_feat,nstat))
+        for j in range(nstat):
+            data_col = A[:,j]
+            ind = np.isfinite(data_col)
+            rhs[:,j] = np.dot(temporalMat[ind,:].T, data_col[ind])
+
+        # Solve
+        spatialMat = 2.0 * np.linalg.lstsq(betaReg + 2.0*lhs, rhs)[0]
+        spatialMat = spatialMat.T
+
+        # Construct problem matrix for temporal components
+        lhs = np.dot(spatialMat.T, spatialMat)
+        rhs = np.zeros((n_feat,nobs))
+        for i in range(nobs):
+            data_row = A[i,:]
+            ind = np.isfinite(data_row)
+            rhs[:,i] = np.dot(spatialMat[ind,:].T, data_row[ind])
+
+        # Solve
+        temporalMat = 2.0 * np.linalg.lstsq(betaReg + 2.0*lhs, rhs)[0]
+        temporalMat = temporalMat.T
+
+        # Compute prediction error
+        prediction = np.dot(temporalMat, spatialMat.T)
+        misfit = (A - prediction).flatten()
+        ind = np.isfinite(misfit)
+        error = np.dot(misfit[ind], misfit[ind])
+
+        # Update
+        errors.append(error)
+        step += 1
+
+    return temporalMat, spatialMat, errors
    
 
 # end of file 

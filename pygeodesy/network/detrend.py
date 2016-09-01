@@ -31,6 +31,8 @@ defaults = {
     'iter': 1,
     'solver': 'RidgeRegression',
     'scale': 1.0,
+    'special_stats': None,
+    'std_thresh': 1.0e10,
 }
 
 
@@ -60,6 +62,7 @@ def detrend(optdict):
     if rank == 0:
         collection, iCm = load_collection(network.dates, opts['user'])
         engine_out = Engine(url=opts['output'])
+        engine_out.initdb(new=True, ref_engine=engine)
     else:
         collection = iCm = None
 
@@ -81,6 +84,12 @@ def detrend(optdict):
     # Determine which components to remove
     parts_to_remove = [s.strip() for s in opts['remove'].split(',')]
 
+    # Make list of any special stations with higher std threshold
+    if opts['special_stats'] is not None:
+        special_stats = [name.strip() for name in opts['special_stats'].split(',')]
+    else:
+        special_stats = []
+
     # Loop over components
     n_iter = int(opts['iter'])
     for comp_count, comp in enumerate(inst.components):
@@ -89,8 +98,8 @@ def detrend(optdict):
             print('%s component' % comp)
 
         # Read subset data frame
-        data_df = network.get(comp, network.sub_names)
-        sigma_df = network.get('sigma_' + comp, network.sub_names)
+        data_df = network.get(comp, network.sub_names, with_date=True)
+        sigma_df = network.get('sigma_' + comp, network.sub_names, with_date=True)
 
         # Make copies for storing the filtered data
         fit_df = data_df.copy()
@@ -109,7 +118,7 @@ def detrend(optdict):
 
             # Scale data
             data_df[statname] *= float(opts['scale'])
-            #sigma_df[statname] /= float(opts['scale'])
+            sigma_df[statname] *= float(opts['scale'])
 
             # Get the data (by reference) for this component and station
             dat = data_df[statname].values
@@ -134,7 +143,7 @@ def detrend(optdict):
                 ind = np.isfinite(dat) * np.isfinite(wgt)
                 nvalid = ind.nonzero()[0].size
                 if nvalid < int(opts['nvalid']):
-                    print('Skipping', statname)
+                    print('Skipping %s due to too few good data' % statname)
                     isStatGood = False
                     break
 
@@ -147,10 +156,17 @@ def detrend(optdict):
                 # Compute misfit and standard deviation
                 misfit = dat - recon['full']
                 stdev = np.nanstd(misfit)
+                if stdev > float(opts['std_thresh']):
+                    print('Skipping %s due to high stdev' % statname)
+                    isStatGood = False
+                    break
                 print(' - sigma: %f   %d-sigma: %f' % (stdev, nstd, nstd*stdev))
 
-                # Detrend
-                filt_signal = model.detrend(dat, recon, parts_to_remove)
+                # Detrend if not just cleaning outliers
+                if opts['cleanonly']:
+                    filt_signal = recon['secular'] + recon['transient'] + recon['seasonal']
+                else:
+                    filt_signal = model.detrend(dat, recon, parts_to_remove)
 
                 # Attempt to get phase for annual sinusoid in days
                 amp, phs = model.computeSeasonalAmpPhase()
@@ -161,24 +177,22 @@ def detrend(optdict):
                 sigma_fit_df[statname] = recon['sigma']
                 
                 # Remove outliers
-                outlierInd = np.abs(misfit) > (nstd * stdev)
+                if statname in special_stats:
+                    outlierInd = np.abs(misfit) > (10*stdev)
+                else:
+                    outlierInd = np.abs(misfit) > (nstd*stdev)
                 dat[outlierInd] = np.nan
 
             if isStatGood:
                 keep_stations.append(statname)
 
-            ## If we are only cleaning the data, then we add back the secular and transient
-            #if inputs.cleanFlag and isStatGood:
-            #    stat[comp] += stat['secular_' + comp] + stat['transient_' + comp]
-            #    stat['secular_' + comp] = 0.0
-            #    stat['transient_' + comp] = 0.0
-
         # Keep only the good stations
         results = []
+        keep_stations = ['DATE'] + keep_stations
         for df, name in ((data_df, comp), (sigma_df, 'sigma_' + comp),
             (fit_df, 'filt_' + comp), (sigma_fit_df, 'sigma_filt_' + comp)):
             sub_df = df[keep_stations]
-            sub_df['DATE'] = network.dates
+            #sub_df['DATE'].values[:] = network.dates
             sub_df.name = name
             results.append(sub_df)
         Ndf = len(results)
