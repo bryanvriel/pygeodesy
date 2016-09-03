@@ -9,6 +9,7 @@ import os
 
 from .Engine import Engine
 from .Interface import Interface
+from .dbutils import check_stations_files
 import pygeodesy.instrument as instrument
 
 # Define the default options
@@ -77,6 +78,9 @@ def subnet(optdict):
 
     else:
         assert False, 'Must input list of stations or polynomial.'
+
+    # Consistency check between station list and stations in database
+    files, stations = check_stations_files(files, stations)
 
     # Subset metadata and write to table
     meta_sub = meta[np.in1d(names, stations)].reset_index(drop=True)

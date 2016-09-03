@@ -22,6 +22,7 @@ defaults = {
     'model': 'filt',
     'figwidth': 10,
     'figheight': 6,
+    'kml': None,
 }
 
 
@@ -43,6 +44,12 @@ def plot(optdict):
 
     # Initialize an instrument
     inst = instrument.select(opts['type'])
+
+    # Plot KML if requested and exit
+    if opts['kml'] is not None:
+        from .kml import make_kml
+        make_kml(engine, opts['kml'])
+        return
 
     # Get the list of stations to plot
     statnames = opts['stations'].split()

@@ -142,14 +142,7 @@ class Interface:
         # First trim the file list (if provided) to keep only the files associated 
         # with the list of stations
         print(' - subsetting files first')
-        files = []
-        for path in filelist:
-            filename = path.split('/')[-1].lower()
-            for stat_id in idlist:
-                if stat_id in filename:
-                    files.append(path)
-        engine_out.addFile(files)
-        del files
+        engine_out.addFile(filelist)
 
         # Loop over the components
         query = "SELECT DATE, %s, sigma_%s FROM tseries WHERE id = '%s';"

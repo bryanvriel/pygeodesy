@@ -322,7 +322,7 @@ class Network:
                 engine_out.engine, if_exists='replace')
 
             # Read and write sigmas
-            sigma_df = pd.read_sql_table('sigma_' + component, self.engine.engine)
+            sigma_df = self.get('sigma_' + component, None, with_date=True)
             sigma_df.to_sql('sigma_' + component, engine_out.engine, if_exists='replace')
 
         return

@@ -97,4 +97,20 @@ def buildFileList_gipsy(input_dir):
     return output
 
 
+def check_stations_files(filelist, stations):
+    """
+    Make sure every station has a file, and vice versa.
+    """
+    files = []; good_stats = []
+    for path in filelist:
+        filename = path.split('/')[-1].lower()
+        for stat_id in stations:
+            if stat_id in filename:
+                files.append(path)
+                if stat_id not in good_stats:
+                    good_stats.append(stat_id)
+
+    return files, good_stats
+
+
 # end of file
