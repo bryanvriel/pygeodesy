@@ -54,6 +54,10 @@ class GPS(TimeSeries):
             elif fmt == 'sopac':
                 new_columns = {'year': 1, 'doy': 2, 'north': 3, 'east': 4, 'up': 5,
                     'sigma_north': 6, 'sigma_east': 7, 'sigma_up': 8}
+            elif fmt == 'gipsy_tseries':
+                new_columns = {'east': 1, 'north': 2, 'up': 3, 'sigma_east': 4,
+                    'sigma_north': 5, 'sigma_up': 6, 'year': 11, 'month': 12,
+                    'day': 13, 'hour': 14}
 
         # Or parse 'columns' string to make a dictionary
         elif columns is not None:
@@ -66,6 +70,8 @@ class GPS(TimeSeries):
         # Update the columns dictionary
         if new_columns is not None:
             self.columns.update(new_columns)
+
+        print(self.columns)
 
         return
 
