@@ -133,11 +133,13 @@ class Interface:
 
 
     def subset_table(self, idlist, engine_out, tstart=None, tend=None,
-        filelist=[], scale=1.0):
+        filelist=[], scale=1.0, block_size=10):
         """
         Subset a raw data table using a list of station IDs, and perform
         an outer join using the dates.
         """
+        from functools import reduce
+
         print('\nSubsetting network to %d stations' % len(idlist))
         # First trim the file list (if provided) to keep only the files associated 
         # with the list of stations
@@ -148,12 +150,13 @@ class Interface:
         query = "SELECT DATE, %s, sigma_%s FROM tseries WHERE id = '%s';"
         for component in self.inst.components:
 
-            print('- subsetting component', component)
+            print(' - subsetting component', component)
 
             # Loop over the stations
-            data_df = None; sigma_df = None
+            print(' - merging stations')
+            data_df = []; sigma_df = []
             for i, statname in enumerate(idlist):
-
+                
                 # Query database for current station+component 
                 data = pd.read_sql_query(query % (component, component, statname),
                     self.engine.engine)
@@ -168,12 +171,20 @@ class Interface:
                 new_data_df[statname].values[:] *= scale
                 new_sigma_df[statname].values[:] *= scale
 
-                # Merge results
-                if data_df is None:
-                    data_df, sigma_df = new_data_df, new_sigma_df
-                else:
-                    data_df = pd.merge(data_df, new_data_df, how='outer', on='DATE')
-                    sigma_df = pd.merge(sigma_df, new_sigma_df, how='outer', on='DATE')
+                # Remove duplicates
+                duplicated = new_data_df.duplicated('DATE')
+                new_data_df = new_data_df.loc[np.invert(duplicated),:]
+                new_sigma_df = new_sigma_df.loc[np.invert(duplicated),:]
+
+                # Append results
+                data_df.append(new_data_df)
+                sigma_df.append(new_sigma_df)
+    
+            # Reduce to make single data frame for current component
+            data_df = reduce(lambda left,right: pd.merge(left, right, how='outer',
+                on='DATE'), data_df)
+            sigma_df = reduce(lambda left,right: pd.merge(left, right, how='outer',
+                on='DATE'), sigma_df)
 
             # Set the DATE column to be the index in order to resample
             data_df.index = pd.to_datetime(data_df['DATE'], format='%Y-%m-%d %H:%M:%S.%f')
@@ -204,6 +215,38 @@ class Interface:
                 if_exists='replace')
 
         return
+
+
+def save_block(data_df, sigma_df, engine, block_cnt):
+
+    data_df = reduce(lambda left,right: pd.merge(left, right, how='outer',
+        on='DATE'), data_df)
+    sigma_df = reduce(lambda left,right: pd.merge(left, right, how='outer',
+        on='DATE'), sigma_df)
+
+    data_df.to_sql('data_block_%03d' % block_cnt, engine.engine, if_exists='replace')
+    sigma_df.to_sql('sigma_block_%03d' % block_cnt, engine.engine, if_exists='replace')
+
+    return [], [], block_cnt+1
+
+
+def merge_blocks(block_cnt, comp, engine):
+
+    for i in range(block_cnt):
+
+        # If first block, save to new component
+        if i == 0:
+            df = pd.read_sql_table('data_block_%03d' % i, engine.engine)
+            df.to_sql(comp, engine.engine, if_exists='replace')
+            df = pd.read_sql_table('sigma_block_%03d' % i, engine.engine)
+            df.to_sql('sigma_' + comp, engine.engine, if_exists='replace')
+
+        # If other blocks, perform outer join
+        else:
+            cmd = ('SELECT * INTO %s FROM %s FULL OUTER JOIN data_block_%03d '
+                   'ON %s.DATE = data_block_%03d.DATE;' % (comp, comp, i, comp, i))
+            print(cmd)
+            pd.io.sql.execute(cmd, engine.engine)
 
 
 # end of file
