@@ -168,7 +168,7 @@ class Engine:
         tables = self.tables()
         comps = []
         for name in tables['name'].values:
-            if '_' not in name and name != 'metadata':
+            if '_' not in name and name not in ['files', 'metadata']:
                 comps.append(name)
         return sorted(comps)
 

@@ -48,7 +48,7 @@ def filter(optdict):
 
     # Filter
     network.filterData(engine_out, int(opts['kernel_size']), mask=opts['mask'],
-        remove_outliers=opts['remove_outliers'],
+        remove_outliers=opts['remove_outliers'], nstd=int(opts['nstd']),
         std_thresh=float(opts['std_thresh']))
 
 

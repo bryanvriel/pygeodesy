@@ -291,23 +291,24 @@ class Network:
             pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=self.nstat).start()
             for scnt, statname in enumerate(self.names):
                 # Get the data
-                data = comp_df[statname]
+                data = comp_df[statname].values
                 # Skip if all NaN
-                if data.isnull().sum() == N:
+                if np.isnan(data).sum() == N:
                     continue
                 # Filter
-                filtered = self.adaptiveMedianFilt(data.values, kernel_size)
+                filtered = self.adaptiveMedianFilt(data, kernel_size)
                 # mask
                 if mask:
                     filtered[np.isnan(data)] = np.nan
                 # Remove outliers
                 if remove_outliers:
-                    residual = data.values - filtered
+                    residual = data - filtered
                     std = np.nanstd(residual)
                     if std > std_thresh:
                         continue
-                    comp_df.loc[residual > 5*std,statname] = np.nan
-                filt_df[statname] = filtered                
+                    data[np.abs(residual) > nstd*std] = np.nan
+                comp_df[statname] = data 
+                filt_df[statname] = filtered
                 keep_stat.append(statname)
                 pbar.update(scnt + 1)
             pbar.finish()
@@ -372,6 +373,7 @@ class Network:
 
         if plot:
             import matplotlib.pyplot as plt
+            fig = plt.figure(figsize=(14,6))
             ax1 = plt.subplot2grid((3,2), (0,0))
             ax2 = plt.subplot2grid((3,2), (1,0))
             ax3 = plt.subplot2grid((3,2), (2,0))
@@ -380,7 +382,7 @@ class Network:
             ax2.plot(self.tdec, temporal['north'], '-b')
             ax3.plot(self.tdec, temporal['up'], '-b')
             ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'],
-                scale=0.1)
+                scale=1.0)
             for lon,lat,name in zip(self.lon,self.lat,self.names):
                 ax4.annotate(name, xy=(lon,lat))
             
@@ -527,6 +529,19 @@ class Network:
         dX = np.linalg.norm(X2 - X1)
         return dX
 
+
+    def getNetworkBounds(self, padding=5):
+        """
+        Get extent of network. Add percentage of network extent.
+        """
+        minlon, minlat = self.lon.min(), self.lat.min()
+        maxlon, maxlat = self.lon.max(), self.lat.max()
+        Δlon = padding / 100.0 * (maxlon - minlon)
+        Δlat = padding / 100.0 * (maxlat - minlat)
+        minlon -= Δlon; maxlon += Δlon
+        minlat -= Δlat; maxlat += Δlat
+        return minlon, maxlon, minlat, maxlat
+        
 
     @property
     def tstart(self):

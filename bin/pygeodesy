@@ -57,6 +57,11 @@ def parse():
     plot = subparsers.add_parser('plot', help='Plot time series for specified stations.')
     plot.add_argument('-cfg', action='store', default='plot.cfg',
         help='Plotting configuration file. Default: plot.cfg.')
+    
+    # Options for network map
+    netmap = subparsers.add_parser('netmap', help='Make interactive map of network.')
+    netmap.add_argument('-cfg', action='store', default='plot.cfg',
+        help='Plotting configuration file. Default: plot.cfg.')
 
     return parser.parse_args()
     
@@ -67,7 +72,7 @@ if __name__ == '__main__':
     inputs = parse()
 
     if inputs.module in ['makedb', 'subnet', 'clean', 'cme', 'filter', 'detrend', 
-        'elasticnet', 'plot']:
+        'elasticnet', 'plot', 'netmap']:
 
         # Parse the configuration file for the given module
         config = pg.Configuration(inputs.cfg, inputs.module)
@@ -96,6 +101,9 @@ if __name__ == '__main__':
 
         elif inputs.module == 'plot':
             pg.view.plot(config())
+
+        elif inputs.module == 'netmap':
+            pg.view.netmap(config())
 
     else:
         print('Module', inputs.module, 'is not supported')

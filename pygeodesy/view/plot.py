@@ -59,9 +59,6 @@ def plot(optdict):
         component = engine.components()[0]
     else:
         component = opts['component']
-    model = opts['model']
-    model_comp = '%s_%s' % (model, component) if model != 'filt' else 'None'
-    filt_comp = 'filt_' + component
 
     # Read data array
     dates = engine.dates()
@@ -79,45 +76,15 @@ def plot(optdict):
     # Set the figure size
     figsize = (int(opts['figwidth']), int(opts['figheight']))
 
-    # Get list of tables in the database
-    tables = engine.tables(asarray=True)
-
-    # Construct list of model components to remove (if applicable)
-    if model == 'secular':
-        parts_to_remove = ['seasonal', 'transient']
-    elif model == 'seasonal':
-        parts_to_remove = ['secular', 'transient']
-    elif model == 'transient':
-        parts_to_remove = ['secular', 'seasonal']
-    elif model == 'full':
-        parts_to_remove = []
-
     # Loop over stations
     for statname in statnames:
 
         # Read data
-        data = pd.read_sql_query("SELECT %s FROM %s;" % (statname, component),
-            engine.engine)
+        data = pd.read_sql_table(component, engine.engine, columns=[statname,])
         data = data[statname].values.squeeze()
 
         # Try to read model data
-        fit = np.nan * np.ones_like(data)
-        if model_comp in tables:
-
-            # Read full model data
-            fit = pd.read_sql_query("SELECT %s FROM full_%s;" % (statname, component),
-                engine.engine).values.squeeze()
-
-            # Remove parts we do not want
-            for ftype in parts_to_remove:
-                signal = pd.read_sql_query("SELECT %s FROM %s_%s;" % (statname,
-                    ftype, component), engine.engine).values.squeeze()
-                fit -= signal
-                data -= signal
-
-        elif filt_comp in tables:
-            fit = pd.read_sql_query("SELECT %s FROM filt_%s;" % (statname, component),
-                engine.engine).values.squeeze()
+        fit = model_and_detrend(data, engine, statname, component, opts['model'])
 
         # Remove means
         dat_mean = np.nanmean(data)
@@ -142,12 +109,45 @@ def plot(optdict):
         plt.close('all')        
 
 
-    # Read metadata from input table
-    #meta = engine.meta()
-    #names = meta['id'].values
+def model_and_detrend(data, engine, statname, component, model):
 
-    
+    # Get list of tables in the database
+    tables = engine.tables(asarray=True)
 
+    # Keys to look for
+    model_comp = '%s_%s' % (model, component) if model != 'filt' else 'None'
+    filt_comp = 'filt_' + component
+
+    # Construct list of model components to remove (if applicable)
+    if model == 'secular':
+        parts_to_remove = ['seasonal', 'transient']
+    elif model == 'seasonal':
+        parts_to_remove = ['secular', 'transient']
+    elif model == 'transient':
+        parts_to_remove = ['secular', 'seasonal']
+    elif model == 'full':
+        parts_to_remove = []
+
+    # Make the model and detrend the data
+    fit = np.nan * np.ones_like(data)
+    if model_comp in tables:
+
+        # Read full model data
+        fit = pd.read_sql_table(component, engine.engine, 
+            columns=[statname,]).values.squeeze()
+
+        # Remove parts we do not want
+        for ftype in parts_to_remove:
+            signal = pd.read_sql_table('%s_%s' % (ftype, component), engine.engine,
+                columns=[statname,]).values.squeeze()
+            fit -= signal
+            data -= signal
+
+    elif filt_comp in tables:
+        fit = pd.read_sql_table('filt_%s' % component, engine.engine,
+            columns=[statname,]).values.squeeze()
+
+    return fit
 
 
 # end of file
