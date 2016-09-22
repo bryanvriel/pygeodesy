@@ -34,8 +34,6 @@ defaults = {
     'special_stats': None,
     'std_thresh': 1.0e10,
 }
-
-
 def detrend(optdict):
 
     # Update the options
@@ -57,6 +55,7 @@ def detrend(optdict):
 
     # Partition the states
     network.partitionStations()
+    proc_nstat = len(network.sub_names)
 
     # Master reads in the time function collection and initializes an output engine
     if rank == 0:
@@ -67,6 +66,7 @@ def detrend(optdict):
         collection = iCm = None
 
     # Broadcast
+    print('Broadcasting data')
     collection = comm.bcast(collection, root=0)
     iCm = comm.bcast(iCm, root=0)
 
@@ -74,6 +74,7 @@ def detrend(optdict):
     model = Model(network.dates, collection=collection)
 
     # Create a solver
+    print('Creating solver')
     try:
         Solver = getattr(solvers, opts['solver'])
         solver = Solver(model.reg_indices, float(opts['penalty']), regMat=iCm)
@@ -89,6 +90,13 @@ def detrend(optdict):
         special_stats = [name.strip() for name in opts['special_stats'].split(',')]
     else:
         special_stats = []
+
+    ## Create 
+    #dat = {}
+    #for component in inst.components:
+    #    secular_dat[component] = np.nan * np.ones(proc_nstat)
+    #    secular_dat['sigma_' + component] = np.nan * np.ones(proc_nstat)
+    #secular_df = pd.DataFrame(secular_dat, index=network.sub_names)
 
     # Loop over components
     n_iter = int(opts['iter'])
@@ -114,7 +122,10 @@ def detrend(optdict):
         keep_stations = []
         nstd = int(opts['nstd'])
         seasonal_dat = {}
-        for statname in network.sub_names:
+        secular_dat = {}
+        coeff_dat = {}
+        coeff_sigma_dat = {}
+        for statcnt, statname in enumerate(network.sub_names):
 
             # Scale data
             data_df[statname] *= float(opts['scale'])
@@ -150,6 +161,10 @@ def detrend(optdict):
                 # Perform least squares
                 mvec = model.invert(solver, dat)#, wgt=wgt)
 
+                # Save coefficients and uncertainties
+                coeff_dat[statname] = mvec
+                coeff_sigma_dat[statname] = np.sqrt(np.diag(model.Cm))
+
                 # Model performs reconstruction
                 recon = model.predict(mvec)
 
@@ -172,6 +187,11 @@ def detrend(optdict):
                 amp, phs = model.computeSeasonalAmpPhase()
                 seasonal_dat[statname] = (amp, phs)
 
+                # Get secular
+                #vel, sigma_vel = model.getSecular(mvec)
+                #secular_df.iloc[statcnt][comp] = vel
+                #secular_df.iloc[statcnt]['sigma_' + comp] = sigma_vel
+
                 # Update fits and sigmas
                 fit_df[statname] = filt_signal
                 sigma_fit_df[statname] = recon['sigma']
@@ -186,13 +206,16 @@ def detrend(optdict):
             if isStatGood:
                 keep_stations.append(statname)
 
+        # Make coefficient data frames
+        coeff_df = pd.DataFrame(coeff_dat)
+        coeff_sigma_df = pd.DataFrame(coeff_sigma_dat)
+
         # Keep only the good stations
         results = []
         keep_stations = ['DATE'] + keep_stations
         for df, name in ((data_df, comp), (sigma_df, 'sigma_' + comp),
             (fit_df, 'filt_' + comp), (sigma_fit_df, 'sigma_filt_' + comp)):
             sub_df = df[keep_stations]
-            #sub_df['DATE'].values[:] = network.dates
             sub_df.name = name
             results.append(sub_df)
         Ndf = len(results)
@@ -207,10 +230,14 @@ def detrend(optdict):
                 proc_results = comm.recv(source=pid, tag=77)
                 proc_stations = comm.recv(source=pid, tag=87)
                 proc_seasonal = comm.recv(source=pid, tag=97)
+                proc_coeff = comm.recv(source=pid, tag=107)
+                proc_coeff_sigma = comm.recv(source=pid, tag=117)
 
                 # Update list of stations and seasonal data
                 keep_stations.extend(proc_stations)
                 seasonal_dat.update(proc_seasonal)
+                coeff_df = pd.concat([coeff_df, proc_coeff], axis=1)
+                coeff_sigma_df = pd.concat([coeff_sigma_df, proc_coeff_sigma], axis=1)
 
                 # Update the data frames
                 for i in range(Ndf):
@@ -228,6 +255,11 @@ def detrend(optdict):
             meta_sub = meta[np.in1d(meta['id'].values, keep_stations)].reset_index(drop=True)
             meta_sub.to_sql('metadata', engine_out.engine, if_exists='replace')
 
+            # Save coefficients to database
+            coeff_df.to_sql('coeff_' + comp, engine_out.engine, if_exists='replace')
+            coeff_sigma_df.to_sql('coeff_sigma_' + comp, engine_out.engine, 
+                if_exists='replace')
+
             # Write seasonal phases if requested
             if opts['output_phase'] is not None and comp == 'up':
                 with open(opts['output_phase'], 'w') as pfid:
@@ -243,12 +275,14 @@ def detrend(optdict):
                         stat_meta = meta_sub.loc[meta_sub['id'] == statname]
                         afid.write('%f %f %f 0.5\n' % (float(stat_meta['lon']),
                             float(stat_meta['lat']), amp))
-     
-
+            
+                    
         else:
             comm.send(results, dest=0, tag=77)
             comm.send(keep_stations, dest=0, tag=87)
             comm.send(seasonal_dat, dest=0, tag=97)
+            comm.send(coeff_df, dest=0, tag=107)
+            comm.send(coeff_sigma_df, dest=0, tag=117)
             del data_df, sigma_df, fit_df, sigma_fit_df
 
         comm.Barrier()
@@ -265,6 +299,7 @@ def load_collection(dates, userfile):
         collfun = imp.load_source('build', userfile)
         collection = collfun.build(dates)
     except:
+        print(' - loading default')
         collection = loadDefaultCollection(dates)
     npar = len(collection)
 

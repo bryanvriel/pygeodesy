@@ -55,10 +55,12 @@ def plot(optdict):
     statnames = opts['stations'].split()
 
     # Read data after checking for existence of component
-    if opts['component'] not in engine.components():
-        component = engine.components()[0]
+    if opts['component'] == 'all':
+        components = engine.components()
+    elif opts['component'] not in engine.components():
+        components = [engine.components()[0]]
     else:
-        component = opts['component']
+        components = [opts['component']]
 
     # Read data array
     dates = engine.dates()
@@ -75,33 +77,47 @@ def plot(optdict):
 
     # Set the figure size
     figsize = (int(opts['figwidth']), int(opts['figheight']))
+    fig, axes = plt.subplots(nrows=len(components), figsize=figsize)
+    if type(axes) not in (list, np.ndarray):
+        axes = [axes]
 
     # Loop over stations
     for statname in statnames:
 
-        # Read data
-        data = pd.read_sql_table(component, engine.engine, columns=[statname,])
-        data = data[statname].values.squeeze()
+        for ax, component in zip(axes, components):
 
-        # Try to read model data
-        fit = model_and_detrend(data, engine, statname, component, opts['model'])
+            # Read data
+            data = pd.read_sql_table(component, engine.engine, columns=[statname,])
+            data = data[statname].values.squeeze()
 
-        # Remove means
-        dat_mean = np.nanmean(data)
-        data -= dat_mean
-        fit -= dat_mean
+            # Try to read model data
+            fit = model_and_detrend(data, engine, statname, component, opts['model'])
 
-        # Plot data
-        fig, ax = plt.subplots(figsize=figsize)
-        line, = ax.plot(dates, data, 'o', alpha=0.6)
-        ax.plot(dates, fit, '-r', linewidth=6)
-        #ax.plot(dates, data - fit, 'o', alpha=0.6)
-        ax.tick_params(labelsize=18)
-        ax.set_xlabel('Year', fontsize=18)
-        ax.set_ylabel(component, fontsize=18)
-        ax.set_xlim(tstart, tend)
-        ax.set_ylim(y0, y1)
-        ax.set_xticks(ax.get_xticks()[::2])
+            # Remove means
+            dat_mean = np.nanmean(data)
+            data -= dat_mean
+            fit -= dat_mean
+
+            # Plot data
+            line, = ax.plot(dates, data, 'o', alpha=0.6, zorder=10)
+            ax.plot(dates, fit, '-r', linewidth=6, zorder=11)
+
+            # Also try to read "raw" data (for CME results)
+            try:
+                raw = pd.read_sql_table('raw_' + component, engine.engine, columns=[statname,])
+                raw = raw.values.squeeze() - dat_mean
+                ax.plot(dates, raw, 'sg', alpha=0.7, zorder=9)
+            except:
+                pass
+
+            ax.tick_params(labelsize=18)
+            ax.set_ylabel(component, fontsize=18)
+            ax.set_xlim(tstart, tend)
+            ax.set_ylim(y0, y1)
+            #ax.set_xticks(ax.get_xticks()[::2])
+
+        axes[0].set_title(statname, fontsize=18)
+        axes[-1].set_xlabel('Year', fontsize=18)
         if opts['save']:
             plt.savefig('%s_%s.png' % (statname, component), 
                 dpi=200, bbox_inches='tight')

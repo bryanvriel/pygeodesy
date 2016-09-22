@@ -121,6 +121,8 @@ class Network:
             procN = nominal_load
         istart = self.rank * nominal_load
         self.sub_names = self.names[istart:istart+procN]
+        self.sub_lon = self.lon[istart:istart+procN]
+        self.sub_lat = self.lat[istart:istart+procN]
         return self.comm.allgather(procN)
 
 
@@ -385,19 +387,18 @@ class Network:
                 scale=1.0)
             for lon,lat,name in zip(self.lon,self.lat,self.names):
                 ax4.annotate(name, xy=(lon,lat))
-            
             plt.show()
-            sys.exit()
 
         if remove:
-            for comp in self.components:
-                A = model[comp]
-                for j, (statname, stat) in enumerate(self.statGen):
-                    dat = stat[comp]
-                    raw_var = np.nanstd(dat)**2
-                    dat -= A[:,j]
-                    filt_var = np.nanstd(dat)**2
-                    print('%s-%s variance reduction: %f' % (statname, comp, filt_var/raw_var))
+            for component in self.inst.components:
+                A = model[component]
+                comp_df = self.get(component, None, with_date=True)
+                comp_df.to_sql('raw_' + component, engine_out.engine, if_exists='replace')
+                for cnt, statname in enumerate(self.names):
+                    comp_df.loc[:,statname] -= A[:,cnt]
+                comp_df.to_sql(component, engine_out.engine, if_exists='replace')
+                sigma_df = self.get('sigma_' + component, None, with_date=True)
+                sigma_df.to_sql('sigma_' + component, engine_out.engine, if_exists='replace')
         
         return
 
@@ -453,10 +454,12 @@ class Network:
             for component in self.inst.components:
                 A = model[component]
                 comp_df = self.get(component, None, with_date=True)
-                comp_df.to_sql(component, engine_out.engine, if_exists='replace')
+                comp_df.to_sql('raw_' + component, engine_out.engine, if_exists='replace')
                 for cnt, statname in enumerate(self.names):
                     comp_df.loc[:,statname] -= A[:,cnt]
-                comp_df.to_sql('filt_' + component, engine_out.engine, if_exists='replace')
+                comp_df.to_sql(component, engine_out.engine, if_exists='replace')
+                sigma_df = self.get('sigma_' + component, None, with_date=True)
+                sigma_df.to_sql('sigma_' + component, engine_out.engine, if_exists='replace')
         
         return
 
@@ -541,7 +544,37 @@ class Network:
         minlon -= Δlon; maxlon += Δlon
         minlat -= Δlat; maxlat += Δlat
         return minlon, maxlon, minlat, maxlat
-        
+
+
+    def makeBasemap(self, ax, plot_stat=False, station_labels=False):
+        """
+        Initialize a basemap based on the network bounds.
+        """
+        from mpl_toolkits.basemap import Basemap
+
+        # Get bounds and initialize basemap
+        lon0, lon1, lat0, lat1 = self.getNetworkBounds()
+        bmap = Basemap(projection='tmerc', llcrnrlat=lat0, llcrnrlon=lon0,
+            urcrnrlat=lat1, urcrnrlon=lon1, lat_ts=lat0, resolution='i',
+            lon_0=lon0, lat_0=lat0, ax=ax)
+
+        # Initialize map visualizations
+        bmap.drawcoastlines(linewidth=1.5)
+        bmap.drawmeridians(np.linspace(lon0, lon1, 4), labels=[0,0,0,1], fontsize=18,
+            fmt='%4.2f')
+        bmap.drawparallels(np.linspace(lat0, lat1, 4), labels=[1,0,0,0], fontsize=18,
+            fmt='%4.2f')
+
+        sx, sy = bmap(self.lon, self.lat)
+        if plot_stat:
+            bmap.plot(sx, sy, 'o', markersize=8)
+
+        if station_labels:
+            for name,x,y in zip(self.names, sx, sy):
+                ax.annotate(name, xy=(x,y))
+            
+        return bmap
+ 
 
     @property
     def tstart(self):

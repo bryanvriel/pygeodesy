@@ -43,7 +43,7 @@ class Model:
 
         # Save the regularization indices
         self.reg_indices = fnParts['reg']
-
+    
         # Save MPI rank
         self.rank = rank
 
@@ -75,7 +75,7 @@ class Model:
         # Save the partitions
         self.Cm = Cm
         self.coeff = {'secular': m[self.isecular], 'seasonal': m[self.iseasonal],
-            'transient': m[self.itransient]}
+            'transient': m[self.itransient], 'step': m[self.istep]}
         return m
 
 
@@ -86,7 +86,7 @@ class Model:
         N = self.G.shape[0]
         zero = np.zeros((N,))
         self.fit_dict = {}
-        for attr in ('seasonal', 'secular', 'transient', 'full', 'sigma'):
+        for attr in ('step', 'seasonal', 'secular', 'transient', 'full', 'sigma'):
             self.fit_dict[attr] = zero.copy()
         return
 
@@ -114,6 +114,30 @@ class Model:
             phs, amp = None, None
         return amp, phs
 
+    
+    def getSecular(self, mvec):
+        """
+        Return the polynomial component with the highest power.
+        """
+        msec = mvec[self.isecular]
+        variance_secular = np.diag(self.Cm)[self.isecular]
+        if len(msec) != 2:
+            return 0.0, 0.0
+        else:
+            return msec[-1], np.sqrt(variance_secular[-1])
+
+
+    def getStep(self, mvec):
+        """
+        Return step coefficients.
+        """
+        mstep = mvec[self.istep]
+        variance_step = np.diag(self.Cm)[self.isecular]
+        if len(msec) < 1:
+            return 0.0, 0.0
+        else:
+            return mstep[-1], variance_step[-1]
+
 
     def predict(self, mvec, out=None):
         """
@@ -129,10 +153,11 @@ class Model:
         secular = np.dot(self.G[:,self.isecular], mvec[self.isecular])
         seasonal = np.dot(self.G[:,self.iseasonal], mvec[self.iseasonal])
         transient = np.dot(self.G[:,self.itransient], mvec[self.itransient])
+        step = np.dot(self.G[:,self.istep], mvec[self.istep])
 
         # Compute the functional partitions
         results = {'secular': secular, 'seasonal': seasonal, 'transient': transient,
-                'full': secular + seasonal + transient}
+            'step': step, 'full': secular + seasonal + transient + step}
 
         # Add uncertainty if applicable
         if hasattr(self, 'Cm'):
@@ -147,7 +172,8 @@ class Model:
         Detrend the data and update model fit.
         """
         # Determine which functional partition to keep
-        parts_to_keep = np.setdiff1d(['seasonal', 'secular', 'transient'], parts_to_remove)
+        parts_to_keep = np.setdiff1d(['seasonal', 'secular', 'transient', 'step'], 
+            parts_to_remove)
 
         # Compute signal to remove
         signal_remove = np.zeros_like(d)

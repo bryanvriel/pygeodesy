@@ -63,6 +63,12 @@ def parse():
     netmap.add_argument('-cfg', action='store', default='plot.cfg',
         help='Plotting configuration file. Default: plot.cfg.')
 
+    # Options for velocity map
+    velmap = subparsers.add_parser('velmap', help='Make velocity map of network.')
+    velmap.add_argument('-cfg', action='store', default='plot.cfg',
+        help='Plotting configuration file. Default: plot.cfg.')
+
+
     return parser.parse_args()
     
 
@@ -72,7 +78,7 @@ if __name__ == '__main__':
     inputs = parse()
 
     if inputs.module in ['makedb', 'subnet', 'clean', 'cme', 'filter', 'detrend', 
-        'elasticnet', 'plot', 'netmap']:
+        'elasticnet', 'plot', 'netmap', 'velmap']:
 
         # Parse the configuration file for the given module
         config = pg.Configuration(inputs.cfg, inputs.module)
@@ -104,6 +110,9 @@ if __name__ == '__main__':
 
         elif inputs.module == 'netmap':
             pg.view.netmap(config())
+
+        elif inputs.module == 'velmap':
+            pg.view.velmap(config())
 
     else:
         print('Module', inputs.module, 'is not supported')
