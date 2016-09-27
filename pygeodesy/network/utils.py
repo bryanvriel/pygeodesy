@@ -158,7 +158,7 @@ def distributeSolutions(mvec, engine, model, network, opts):
     """
     # First write original data to database
     scale = float(opts['scale'])
-    df = network.get(opts['component'], None, scale=scale)
+    df = network.get(opts['component'], None, scale=scale, with_date=True)
     df.to_sql(opts['component'], engine.engine, if_exists='replace')
 
     # Initialize summary dictionary
