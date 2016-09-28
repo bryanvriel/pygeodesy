@@ -13,11 +13,12 @@ import pygeodesy.network.Network as Network
 # Define the default options
 defaults = {
     'input': 'sqlite:///data.db',
-    'index': 0,
+    'index': None,
     'figwidth': 12,
     'figheight': 7,
     'scale': None,
     'quiverkey': None,
+    'model': None,
 }
 
 
@@ -54,12 +55,27 @@ def velmap(optdict):
 
     # Build the velocity arrays
     east = []; north = []
-    index = int(opts['index'])
-    for statname in meta['id']:
-        east_df = network.get('coeff_east', statname)
-        north_df = network.get('coeff_north', statname)
-        east.append(east_df.values[index])
-        north.append(north_df.values[index])
+    if opts['model'] is not None:
+
+        for statname in meta['id']:
+            print(statname)
+            east_df = network.get('%s_east' % opts['model'], statname)
+            north_df = network.get('%s_north' % opts['model'], statname)
+
+            # Get slopes
+            phi_east = np.polyfit(network.tdec, east_df.values, 1)
+            phi_north = np.polyfit(network.tdec, north_df.values, 1)
+            east.append(phi_east[0])
+            north.append(phi_north[0])
+
+    elif opts['index'] is not None:
+
+        index = int(opts['index'])
+        for statname in meta['id']:
+            east_df = network.get('coeff_east', statname)
+            north_df = network.get('coeff_north', statname)
+            east.append(east_df.values[index])
+            north.append(north_df.values[index])
 
     if opts['quiverkey'] is not None:
         qkey = float(opts['quiverkey'])

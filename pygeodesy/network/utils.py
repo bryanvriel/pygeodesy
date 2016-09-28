@@ -164,22 +164,33 @@ def distributeSolutions(mvec, engine, model, network, opts):
     # Initialize summary dictionary
     results = {'secular': {'DATE': network.dates}, 
         'seasonal': {'DATE': network.dates}, 
+        'step': {'DATE': network.dates},
         'transient': {'DATE': network.dates}, 
         'full': {'DATE': network.dates}}
+
+    # Dictionary for coefficients
+    coeffs = {}
     
     # Loop over stations
     nstat = network.nstat
     for cnt, statname in enumerate(network.names):
         # Make predictions
-        fit_dict = model.predict(mvec[cnt::nstat])
-        for ftype in ('secular', 'seasonal', 'transient', 'full'):
+        mstat = mvec[cnt::nstat]
+        fit_dict = model.predict(mstat)
+        for ftype in ('secular', 'seasonal', 'step', 'transient', 'full'):
             results[ftype][statname] = fit_dict[ftype]
+        # Save coefficients
+        coeffs[statname] = mstat
 
     # Write results to database
-    for ftype in ('secular', 'seasonal', 'transient', 'full'):
+    for ftype in ('secular', 'seasonal', 'step', 'transient', 'full'):
         df = pd.DataFrame(results[ftype])
         df.to_sql('%s_%s' % (ftype, opts['component']), engine.engine, 
             if_exists='replace')
+
+    # Also for coefficients
+    coeffs = pd.DataFrame(coeffs)
+    coeffs.to_sql('coeff_%s' % opts['component'], engine.engine, if_exists='replace')
 
     return
 

@@ -20,6 +20,7 @@ defaults = {
     'ylim': (None, None),
     'model': 'filt',
     'station_labels': True,
+    'coefficients': False,
 }
 
 
@@ -29,7 +30,7 @@ def netmap(optdict):
     opts = defaults.copy()
     opts.update(optdict)
 
-    # Map matplotlib color coes to the seaborn palette
+    # Map matplotlib color codes to the seaborn palette
     try:
         import seaborn as sns
         sns.set_color_codes()
@@ -84,21 +85,27 @@ def netmap(optdict):
             ax_ts[0].set_title(name_closest)
             for ax, comp in zip(ax_ts, components):
 
-                # Read raw data
-                data = network.get(comp, name_closest, with_date=False)
-
-                # Try to read model data
-                fit = model_and_detrend(data, engine, name_closest, comp, opts['model'])
-
-                # Remove means
-                dat_mean = np.nanmean(data)
-                data -= dat_mean
-                fit -= dat_mean
-
-                # Plot time series
                 ax.cla()
-                ax.plot(network.tdec, data[name_closest], 'o', alpha=0.5)
-                ax.plot(network.tdec, fit, '-r', linewidth=2)
+                if not opts['coefficients']:
+
+                    # Read raw data
+                    data = network.get(comp, name_closest, with_date=False)
+
+                    # Try to read model data
+                    fit = model_and_detrend(data, engine, name_closest, comp, opts['model'])
+
+                    # Remove means
+                    dat_mean = np.nanmean(data)
+                    data -= dat_mean
+                    fit -= dat_mean
+
+                    # Plot time series
+                    ax.plot(network.tdec, data[name_closest], 'o', alpha=0.5)
+                    ax.plot(network.tdec, fit, '-r', linewidth=2)
+
+                else:
+                    coeff = network.get('coeff_%s' % comp, name_closest, with_date=False)
+                    ax.plot(coeff, 'o')
                 ax.set_ylabel(comp)
                 ax.tick_params(labelsize=14)
 
