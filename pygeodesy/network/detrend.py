@@ -72,7 +72,7 @@ def detrend(optdict):
 
     # Create a model for handling the time function
     model = Model(network.dates, collection=collection)
-
+    
     # Create a solver
     print('Creating solver')
     try:
@@ -166,10 +166,11 @@ def detrend(optdict):
                 coeff_sigma_dat[statname] = np.sqrt(np.diag(model.Cm))
 
                 # Model performs reconstruction
-                recon = model.predict(mvec)
+                fit_dict = model.predict(mvec)
+                filt_signal = fit_dict['full']
 
                 # Compute misfit and standard deviation
-                misfit = dat - recon['full']
+                misfit = dat - filt_signal
                 stdev = np.nanstd(misfit)
                 if stdev > float(opts['std_thresh']):
                     print('Skipping %s due to high stdev' % statname)
@@ -177,24 +178,13 @@ def detrend(optdict):
                     break
                 print(' - sigma: %f   %d-sigma: %f' % (stdev, nstd, nstd*stdev))
 
-                # Detrend if not just cleaning outliers
-                if opts['cleanonly']:
-                    filt_signal = recon['secular'] + recon['transient'] + recon['seasonal']
-                else:
-                    filt_signal = model.detrend(dat, recon, parts_to_remove)
-
                 # Attempt to get phase for annual sinusoid in days
                 amp, phs = model.computeSeasonalAmpPhase()
                 seasonal_dat[statname] = (amp, phs)
 
-                # Get secular
-                #vel, sigma_vel = model.getSecular(mvec)
-                #secular_df.iloc[statcnt][comp] = vel
-                #secular_df.iloc[statcnt]['sigma_' + comp] = sigma_vel
-
                 # Update fits and sigmas
                 fit_df[statname] = filt_signal
-                sigma_fit_df[statname] = recon['sigma']
+                sigma_fit_df[statname] = fit_dict['sigma']
                 
                 # Remove outliers
                 if statname in special_stats:
@@ -309,7 +299,7 @@ def load_collection(dates, userfile):
         Cm = collfun.computeCm(collection)
         iCm = np.linalg.inv(Cm)
     except:
-        iCm = np.eye(npar)
+        iCm = None
 
     return collection, iCm
 
