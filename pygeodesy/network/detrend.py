@@ -82,22 +82,12 @@ def detrend(optdict):
         print('Specified solver not supported.')
         sys.exit()
 
-    # Determine which components to remove
-    parts_to_remove = [s.strip() for s in opts['remove'].split(',')]
-
     # Make list of any special stations with higher std threshold
     if opts['special_stats'] is not None:
         special_stats = [name.strip() for name in opts['special_stats'].split(',')]
     else:
         special_stats = []
-
-    ## Create 
-    #dat = {}
-    #for component in inst.components:
-    #    secular_dat[component] = np.nan * np.ones(proc_nstat)
-    #    secular_dat['sigma_' + component] = np.nan * np.ones(proc_nstat)
-    #secular_df = pd.DataFrame(secular_dat, index=network.sub_names)
-
+    
     # Loop over components
     n_iter = int(opts['iter'])
     for comp_count, comp in enumerate(inst.components):
@@ -105,7 +95,7 @@ def detrend(optdict):
         if rank == 0:
             print('%s component' % comp)
 
-        # Read subset data frame
+        # Read subset data frame for my set of stations
         data_df = network.get(comp, network.sub_names, with_date=True)
         sigma_df = network.get('sigma_' + comp, network.sub_names, with_date=True)
 
@@ -121,8 +111,6 @@ def detrend(optdict):
         # Loop over stations
         keep_stations = []
         nstd = int(opts['nstd'])
-        seasonal_dat = {}
-        secular_dat = {}
         coeff_dat = {}
         coeff_sigma_dat = {}
         for statcnt, statname in enumerate(network.sub_names):
@@ -251,6 +239,13 @@ def detrend(optdict):
                 if_exists='replace')
 
             # Write seasonal phases if requested
+            seasonal_bool = (comp == 'up') * (opts['output_phase'] + opts['output_amp'])
+            if seasonal_bool:
+
+                # Compute amplitude and phase for station
+                amp, phs = model.computeSeasonalAmpPhase()
+
+
             if opts['output_phase'] is not None and comp == 'up':
                 with open(opts['output_phase'], 'w') as pfid:
                     for statname, (amp,phs) in seasonal_dat.items():

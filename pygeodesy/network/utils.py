@@ -156,10 +156,14 @@ def distributeSolutions(mvec, engine, model, network, opts):
     """
     Distribute ADMM solutions to the correct stations and save to database.
     """
-    # First write original data to database
+
+    # Cache some options
     scale = float(opts['scale'])
-    df = network.get(opts['component'], None, scale=scale, with_date=True)
-    df.to_sql(opts['component'], engine.engine, if_exists='replace')
+    component = opts['component']
+
+    # First write original data to database
+    df = network.get(component, None, scale=scale, with_date=True)
+    df.to_sql(component, engine.engine, if_exists='replace')
 
     # Initialize summary dictionary
     results = {'secular': {'DATE': network.dates}, 
@@ -185,12 +189,12 @@ def distributeSolutions(mvec, engine, model, network, opts):
     # Write results to database
     for ftype in ('secular', 'seasonal', 'step', 'transient', 'full'):
         df = pd.DataFrame(results[ftype])
-        df.to_sql('%s_%s' % (ftype, opts['component']), engine.engine, 
+        df.to_sql('%s_%s' % (ftype, component), engine.engine, 
             if_exists='replace')
 
     # Also for coefficients
     coeffs = pd.DataFrame(coeffs)
-    coeffs.to_sql('coeff_%s' % opts['component'], engine.engine, if_exists='replace')
+    coeffs.to_sql('coeff_%s' % component, engine.engine, if_exists='replace')
 
     return
 
