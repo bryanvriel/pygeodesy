@@ -138,7 +138,7 @@ class Network:
         return
 
 
-    def getDataArrays(self, order='columns', components=None, scale=1.0):
+    def getDataArrays(self, order='columns', components=None, scale=1.0, sigmas='raw'):
         """
         Traverses the station dictionary to construct regular sized arrays for the
         data and weights.
@@ -163,10 +163,18 @@ class Network:
         j = 0
         for component in comps:
             for statname in self.names:
+                # Get the data
                 dat_df = self.get(component, statname, scale=scale)
                 sig_df = self.get('sigma_' + component, statname, scale=1.0/scale)
+                # Store data
                 data[:,j] = dat_df[statname].values
-                weights[:,j] = 1.0 / sig_df[statname].values
+                # Compute mean/median weight if specified
+                if sigmas == 'median':
+                    weights[:,j] = 1.0 / np.nanmedian(sig_df[statname].values)
+                elif sigmas == 'mean':
+                    weights[:,j] = 1.0 / np.nanmean(sig_df[statname].values)
+                else:
+                    weights[:,j] = 1.0 / sig_df[statname].values
                 j += 1
 
         # Custom packaging

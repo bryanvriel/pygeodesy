@@ -90,6 +90,16 @@ def plot(optdict):
             data = pd.read_sql_table(component, engine.engine, columns=[statname,])
             data = data[statname].values.squeeze()
 
+            #signal = np.zeros_like(data)
+            #for ftype in ['secular', 'seasonal', 'transient', 'step']:
+            #    new_sig = pd.read_sql_table('%s_%s' % (ftype, component), engine.engine,
+            #        columns=[statname,]).values.squeeze()
+            #    signal += new_sig
+
+            #ax.plot(dates, data, 'o')
+            #ax.plot(dates, signal, '-r', linewidth=2)
+            #plt.show(); sys.exit()
+
             # Try to read model data
             fit = model_and_detrend(data, engine, statname, component, opts['model'])
 
@@ -136,20 +146,24 @@ def model_and_detrend(data, engine, statname, component, model):
 
     # Construct list of model components to remove (if applicable)
     if model == 'secular':
-        parts_to_remove = ['seasonal', 'transient']
+        parts_to_remove = ['seasonal', 'transient', 'step']
     elif model == 'seasonal':
-        parts_to_remove = ['secular', 'transient']
+        parts_to_remove = ['secular', 'transient', 'step']
     elif model == 'transient':
-        parts_to_remove = ['secular', 'seasonal']
+        parts_to_remove = ['secular', 'seasonal', 'step']
+    elif model == 'step':
+        parts_to_remove = ['secular', 'seasonal', 'transient']
     elif model == 'full':
         parts_to_remove = []
+    else:
+        assert False, 'Unsupported model component %s' % model
 
     # Make the model and detrend the data
     fit = np.nan * np.ones_like(data)
     if model_comp in tables:
 
         # Read full model data
-        fit = pd.read_sql_table(component, engine.engine, 
+        fit = pd.read_sql_table('full_' + component, engine.engine, 
             columns=[statname,]).values.squeeze()
 
         # Remove parts we do not want
@@ -159,7 +173,7 @@ def model_and_detrend(data, engine, statname, component, model):
             fit -= signal
             data -= signal
 
-    elif filt_comp in tables:
+    elif filt_comp in tables and model_comp not in tables:
         fit = pd.read_sql_table('filt_%s' % component, engine.engine,
             columns=[statname,]).values.squeeze()
 

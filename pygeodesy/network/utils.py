@@ -29,7 +29,7 @@ def partitionData(solver, network, opts, comm):
     # Master work
     if rank == 0:
         # Load all data into contiguous arrays
-        datArr, wgtArr = network.getDataArrays(order='columns', 
+        datArr, wgtArr = network.getDataArrays(order='columns', sigmas=opts['sigmas'],
             components=[opts['component']], scale=float(opts['scale']))
         # Read in time function
         collection, iCm = load_collection(network.dates, opts['user'])
@@ -116,8 +116,7 @@ def partitionData(solver, network, opts, comm):
     print(' - making sparse matrices. I and J lengths:', len(rows), len(cols))
     solver.Amat = spmatrix(Gdat, rows, cols, size=(dat_offset,solver.procN))
     solver.b = np.array(dlist)
-    #solver.iCd = spmatrix(np.array(iCd), range(len(dlist)), range(len(dlist)))
-    solver.iCd = spmatrix(1.0, range(len(dlist)), range(len(dlist)))
+    solver.iCd = spmatrix(np.array(iCd), range(len(dlist)), range(len(dlist)))
     solver.ndata = len(dlist)
     assert len(dlist) == dat_offset, 'Mismatch: %d vs %d' % (len(dlist), dat_offset)
 

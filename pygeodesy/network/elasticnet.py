@@ -26,6 +26,7 @@ defaults = {
     'correlation_length': None,
     'oversmooth': 1.0,
     'scale': 1.0,
+    'sigmas': 'raw',
 }
 
 
