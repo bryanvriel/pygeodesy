@@ -153,7 +153,7 @@ def model_and_detrend(data, engine, statname, component, model):
         parts_to_remove = ['secular', 'seasonal', 'step']
     elif model == 'step':
         parts_to_remove = ['secular', 'seasonal', 'transient']
-    elif model == 'full':
+    elif model in ['full', 'filt']:
         parts_to_remove = []
     else:
         assert False, 'Unsupported model component %s' % model

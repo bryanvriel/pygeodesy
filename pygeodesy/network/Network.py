@@ -46,14 +46,16 @@ class Network:
         for key in ('lat','lon','elev'):
             setattr(self, key, self.meta[key].values.astype(float))
         self.nstat = len(self.names)
+        if self.rank == 0:
+            print(' - number of stations:', self.nstat)
 
         # Save the observation dates
         dates = pd.read_sql_table(self.inst.components[0], self.engine.engine,
             columns=['DATE']).values
         dates = np.array([pd.to_datetime(date, infer_datetime_format=True)
             for date in dates])
-        self.dates = [dtime.datetime.utcfromtimestamp(date.astype('O') / 1.0e9)
-            for date in dates]
+        self.dates = np.array([dtime.datetime.utcfromtimestamp(date.astype('O') / 1.0e9)
+            for date in dates])
 
         # Convert dates to decimal year and save
         self.tdec = np.array([datestr2tdec(pydtime=date) for date in self.dates])
@@ -403,7 +405,9 @@ class Network:
                 comp_df = self.get(component, None, with_date=True)
                 comp_df.to_sql('raw_' + component, engine_out.engine, if_exists='replace')
                 for cnt, statname in enumerate(self.names):
-                    comp_df.loc[:,statname] -= A[:,cnt]
+                    residual = comp_df.loc[:,statname] - A[:,cnt]
+                    residual -= np.nanmean(residual)
+                    comp_df.loc[:,statname] = residual
                 comp_df.to_sql(component, engine_out.engine, if_exists='replace')
                 sigma_df = self.get('sigma_' + component, None, with_date=True)
                 sigma_df.to_sql('sigma_' + component, engine_out.engine, if_exists='replace')

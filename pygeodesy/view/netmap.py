@@ -90,6 +90,7 @@ def netmap(optdict):
 
                     # Read raw data
                     data = network.get(comp, name_closest, with_date=False)
+                    data = data.values.squeeze()
 
                     # Try to read model data
                     fit = model_and_detrend(data, engine, name_closest, comp, opts['model'])
@@ -100,7 +101,7 @@ def netmap(optdict):
                     fit -= dat_mean
 
                     # Plot time series
-                    ax.plot(network.tdec, data[name_closest], 'o', alpha=0.5)
+                    ax.plot(network.tdec, data, 'o', alpha=0.5)
                     ax.plot(network.tdec, fit, '-r', linewidth=2)
 
                 else:

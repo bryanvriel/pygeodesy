@@ -153,7 +153,7 @@ def detrend(optdict):
                 coeff_dat[statname] = mvec
                 coeff_sigma_dat[statname] = np.sqrt(np.diag(model.Cm))
 
-                # Model performs reconstruction
+                # Model performs reconstruction (only for detecting outliers)
                 fit_dict = model.predict(mvec)
                 filt_signal = fit_dict['full']
 
@@ -166,14 +166,6 @@ def detrend(optdict):
                     break
                 print(' - sigma: %f   %d-sigma: %f' % (stdev, nstd, nstd*stdev))
 
-                # Attempt to get phase for annual sinusoid in days
-                amp, phs = model.computeSeasonalAmpPhase()
-                seasonal_dat[statname] = (amp, phs)
-
-                # Update fits and sigmas
-                fit_df[statname] = filt_signal
-                sigma_fit_df[statname] = fit_dict['sigma']
-                
                 # Remove outliers
                 if statname in special_stats:
                     outlierInd = np.abs(misfit) > (10*stdev)
@@ -187,16 +179,21 @@ def detrend(optdict):
         # Make coefficient data frames
         coeff_df = pd.DataFrame(coeff_dat)
         coeff_sigma_df = pd.DataFrame(coeff_sigma_dat)
+        del coeff_dat, coeff_sigma_dat
 
         # Keep only the good stations
         results = []
-        keep_stations = ['DATE'] + keep_stations
         for df, name in ((data_df, comp), (sigma_df, 'sigma_' + comp),
-            (fit_df, 'filt_' + comp), (sigma_fit_df, 'sigma_filt_' + comp)):
-            sub_df = df[keep_stations]
+            (coeff_df, 'coeff_' + comp), (coeff_sigma_df, 'coeff_sigma_' + comp)):
+            if 'coeff' in name:
+                sub_df = df[keep_stations]
+            else:
+                sub_df = df[['DATE'] + keep_stations]
             sub_df.name = name
             results.append(sub_df)
         Ndf = len(results)
+
+        comm.Barrier()
 
         # Send my results to the master for writing
         if rank == 0:
@@ -207,68 +204,78 @@ def detrend(optdict):
                 # Get the data
                 proc_results = comm.recv(source=pid, tag=77)
                 proc_stations = comm.recv(source=pid, tag=87)
-                proc_seasonal = comm.recv(source=pid, tag=97)
-                proc_coeff = comm.recv(source=pid, tag=107)
-                proc_coeff_sigma = comm.recv(source=pid, tag=117)
 
                 # Update list of stations and seasonal data
                 keep_stations.extend(proc_stations)
-                seasonal_dat.update(proc_seasonal)
-                coeff_df = pd.concat([coeff_df, proc_coeff], axis=1)
-                coeff_sigma_df = pd.concat([coeff_sigma_df, proc_coeff_sigma], axis=1)
 
                 # Update the data frames
                 for i in range(Ndf):
                     name = results[i].name
-                    results[i] = pd.merge(results[i], proc_results[i],
-                        how='outer', on='DATE')
+                    if 'coeff' in name:
+                        results[i] = results[i].join(proc_results[i])
+                    else:
+                        results[i] = pd.merge(results[i], proc_results[i],
+                            how='outer', on='DATE')
                     results[i].name = name
 
-            # Write to database after getting from all workers
+            # Initialize summary dictionary
+            out_dict = {'secular': {'DATE': network.dates},
+                'seasonal': {'DATE': network.dates},
+                'step': {'DATE': network.dates},
+                'transient': {'DATE': network.dates},
+                'full': {'DATE': network.dates}}
+
+            # Compute the model fits
+            coeff_df, coeff_sigma_df = results[2], results[3]
+            for statname in keep_stations:
+                m = coeff_df[statname].values.squeeze()
+                fit_dict = model.predict(m, sigma=False)
+                for ftype in ('secular', 'seasonal', 'step', 'transient', 'full'):
+                    out_dict[ftype][statname] = fit_dict[ftype]
+
+            # Write results to database
             for i in range(Ndf):
                 results[i].to_sql(results[i].name, engine_out.engine, if_exists='replace')
 
+            for ftype in ('secular', 'seasonal', 'step', 'transient', 'full'):
+                df = pd.DataFrame(out_dict[ftype])
+                df.to_sql('%s_%s' % (ftype, comp), engine_out.engine, if_exists='replace')
+                
             # Also load the metadata and keep the good stations
             meta = engine.meta()
             meta_sub = meta[np.in1d(meta['id'].values, keep_stations)].reset_index(drop=True)
             meta_sub.to_sql('metadata', engine_out.engine, if_exists='replace')
 
-            # Save coefficients to database
-            coeff_df.to_sql('coeff_' + comp, engine_out.engine, if_exists='replace')
-            coeff_sigma_df.to_sql('coeff_sigma_' + comp, engine_out.engine, 
-                if_exists='replace')
-
             # Write seasonal phases if requested
-            seasonal_bool = (comp == 'up') * (opts['output_phase'] + opts['output_amp'])
+            seasonal_bool = ((comp == 'up') * ((opts['output_phase'] is not None)
+                + (opts['output_amp'] is not None)))
             if seasonal_bool:
+
+                raise NotImplementedError('No seasonal output support yet')
 
                 # Compute amplitude and phase for station
                 amp, phs = model.computeSeasonalAmpPhase()
 
+                if opts['output_phase'] is not None and comp == 'up':
+                    with open(opts['output_phase'], 'w') as pfid:
+                        for statname, (amp,phs) in seasonal_dat.items():
+                            stat_meta = meta_sub.loc[meta_sub['id'] == statname]
+                            pfid.write('%f %f %f 0.5\n' % (float(stat_meta['lon']),
+                                float(stat_meta['lat']), phs))
 
-            if opts['output_phase'] is not None and comp == 'up':
-                with open(opts['output_phase'], 'w') as pfid:
-                    for statname, (amp,phs) in seasonal_dat.items():
-                        stat_meta = meta_sub.loc[meta_sub['id'] == statname]
-                        pfid.write('%f %f %f 0.5\n' % (float(stat_meta['lon']),
-                            float(stat_meta['lat']), phs))
-
-            # Write seasonal amps if requested
-            if opts['output_amp'] is not None and comp == 'up':
-                with open(opts['output_amp'], 'w') as afid:
-                    for statname, (amp,phs) in seasonal_dat.items():
-                        stat_meta = meta_sub.loc[meta_sub['id'] == statname]
-                        afid.write('%f %f %f 0.5\n' % (float(stat_meta['lon']),
-                            float(stat_meta['lat']), amp))
+                # Write seasonal amps if requested
+                if opts['output_amp'] is not None and comp == 'up':
+                    with open(opts['output_amp'], 'w') as afid:
+                        for statname, (amp,phs) in seasonal_dat.items():
+                            stat_meta = meta_sub.loc[meta_sub['id'] == statname]
+                            afid.write('%f %f %f 0.5\n' % (float(stat_meta['lon']),
+                                float(stat_meta['lat']), amp))
             
                     
         else:
             comm.send(results, dest=0, tag=77)
             comm.send(keep_stations, dest=0, tag=87)
-            comm.send(seasonal_dat, dest=0, tag=97)
-            comm.send(coeff_df, dest=0, tag=107)
-            comm.send(coeff_sigma_df, dest=0, tag=117)
-            del data_df, sigma_df, fit_df, sigma_fit_df
+            del data_df, sigma_df
 
         comm.Barrier()
 

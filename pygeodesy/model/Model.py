@@ -139,7 +139,7 @@ class Model:
             return mstep[-1], variance_step[-1]
 
 
-    def predict(self, mvec, out=None):
+    def predict(self, mvec, out=None, sigma=True):
         """
         Predict time series with a functional decomposition specified by data.
 
@@ -160,7 +160,7 @@ class Model:
             'step': step, 'full': secular + seasonal + transient + step}
 
         # Add uncertainty if applicable
-        if hasattr(self, 'Cm'):
+        if hasattr(self, 'Cm') and sigma:
             sigma = np.sqrt(np.diag(np.dot(self.G, np.dot(self.Cm, self.G.T))))
             results['sigma'] = sigma
 
