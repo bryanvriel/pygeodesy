@@ -104,7 +104,6 @@ def velmap(optdict):
                 phi_north = np.polyfit(tsub[finite], north_data[finite], 1)
                 east.append(phi_east[0])
                 north.append(phi_north[0])
-
                 
 
     if opts['quiverkey'] is not None:

@@ -319,6 +319,8 @@ class Network:
                     if std > std_thresh:
                         continue
                     data[np.abs(residual) > nstd*std] = np.nan
+                    # Re-filter
+                    filtered = self.adaptiveMedianFilt(data, kernel_size)
                 comp_df[statname] = data 
                 filt_df[statname] = filtered
                 keep_stat.append(statname)
