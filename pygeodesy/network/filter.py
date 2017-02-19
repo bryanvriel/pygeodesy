@@ -23,6 +23,8 @@ defaults = {
     'kernel_size': 7,
     'nstd': 5,
     'std_thresh': 100.0,
+    'deviator': 'std',
+    'log': False,
 }
 
 
@@ -49,7 +51,8 @@ def filter(optdict):
     # Filter
     network.filterData(engine_out, int(opts['kernel_size']), mask=opts['mask'],
         remove_outliers=opts['remove_outliers'], nstd=int(opts['nstd']),
-        std_thresh=float(opts['std_thresh']))
+        std_thresh=float(opts['std_thresh']), deviator=opts['deviator'],
+        log=opts['log'])
 
 
 # end of file

@@ -4,6 +4,12 @@ import numpy as np
 import sys
 import os
 
+# Temporary kludge from internet due to numpy bug
+try:
+    import importlib.machinery
+except:
+    pass
+
 
 def configuration(parent_package='', top_path=None):
 

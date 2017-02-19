@@ -1,7 +1,6 @@
 #-*- coding: utf-8 -*-
 
 import numpy as np
-from scipy.stats import nanmedian
 import tsinsar as ts
 import shutil
 import h5py
@@ -371,18 +370,18 @@ class TimeSeries:
         # Beginning region
         halfWindow = 0
         for i in range(kernel_size//2):
-            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+            filt_data[i] = np.nanmedian(dat[i-halfWindow:i+halfWindow+1])
             halfWindow += 1
 
         # Middle region
         halfWindow = kernel_size // 2
         for i in range(halfWindow, nobs - halfWindow):
-            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+            filt_data[i] = np.nanmedian(dat[i-halfWindow:i+halfWindow+1])
 
         # Ending region
         halfWindow -= 1
         for i in range(nobs - halfWindow, nobs):
-            filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+            filt_data[i] = np.nanmedian(dat[i-halfWindow:i+halfWindow+1])
             halfWindow -= 1
 
         return filt_data

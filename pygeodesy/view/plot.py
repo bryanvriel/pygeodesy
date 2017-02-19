@@ -13,6 +13,7 @@ import pygeodesy.instrument as instrument
 defaults = {
     'input': 'sqlite:///data.db',
     'component': None,
+    'residual': False,
     'stations': None,
     'statlist': None,
     'save': False,
@@ -89,17 +90,7 @@ def plot(optdict):
             # Read data
             data = pd.read_sql_table(component, engine.engine, columns=[statname,])
             data = data[statname].values.squeeze()
-
-            #signal = np.zeros_like(data)
-            #for ftype in ['secular', 'seasonal', 'transient', 'step']:
-            #    new_sig = pd.read_sql_table('%s_%s' % (ftype, component), engine.engine,
-            #        columns=[statname,]).values.squeeze()
-            #    signal += new_sig
-
-            #ax.plot(dates, data, 'o')
-            #ax.plot(dates, signal, '-r', linewidth=2)
-            #plt.show(); sys.exit()
-
+            
             # Try to read model data
             fit = model_and_detrend(data, engine, statname, component, opts['model'])
 
@@ -107,18 +98,26 @@ def plot(optdict):
             dat_mean = np.nanmean(data)
             data -= dat_mean
             fit -= dat_mean
+            residual = data - fit
 
-            # Plot data
-            line, = ax.plot(dates, data, 'o', alpha=0.6, zorder=10)
-            ax.plot(dates, fit, '-r', linewidth=6, zorder=11)
+            # Plot residuals
+            if opts['residual']:
+                std = np.nanmedian(np.abs(residual - np.nanstd(residual)))
+                residual[np.abs(residual) > 4*std] = np.nan
+                line, = ax.plot(dates, residual, 'o', alpha=0.6, zorder=10)
+            # Or data and model
+            else:
+                line, = ax.plot(dates, data, 'o', alpha=0.6, zorder=10)
+                ax.plot(dates, fit, '-r', linewidth=6, zorder=11)
 
-            # Also try to read "raw" data (for CME results)
-            try:
-                raw = pd.read_sql_table('raw_' + component, engine.engine, columns=[statname,])
-                raw = raw.values.squeeze() - dat_mean
-                ax.plot(dates, raw, 'sg', alpha=0.7, zorder=9)
-            except:
-                pass
+                # Also try to read "raw" data (for CME results)
+                try:
+                    raw = pd.read_sql_table('raw_' + component, 
+                        engine.engine, columns=[statname,])
+                    raw = raw.values.squeeze() - dat_mean
+                    ax.plot(dates, raw, 'sg', alpha=0.7, zorder=9)
+                except:
+                    pass
 
             ax.tick_params(labelsize=18)
             ax.set_ylabel(component, fontsize=18)

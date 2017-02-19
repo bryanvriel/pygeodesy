@@ -100,6 +100,16 @@ def netmap(optdict):
                     data -= dat_mean
                     fit -= dat_mean
 
+                    # Compute variance of data if possible
+                    try:
+                        resid = data - fit
+                        std = np.nanstd(resid)
+                        mad = np.nanmedian(np.abs(resid - np.nanmedian(resid)))
+                        print(' - std:', std)
+                        print(' - mad:', mad)
+                    except:
+                        pass
+
                     # Plot time series
                     ax.plot(network.tdec, data, 'o', alpha=0.5)
                     ax.plot(network.tdec, fit, '-r', linewidth=2)

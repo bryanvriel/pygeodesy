@@ -1,7 +1,6 @@
 #-*- coding: utf-8 -*-
 
 import numpy as np
-from scipy.stats import nanmedian
 import datetime as dtime
 from mpi4py import MPI
 import pandas as pd
@@ -278,7 +277,7 @@ class Network:
 
 
     def filterData(self, engine_out, kernel_size, mask=False, remove_outliers=False,
-        nstd=5, std_thresh=100.0):
+        nstd=5, std_thresh=100.0, deviator='std', log=False):
         """
         Call median filter function.
         """
@@ -288,8 +287,24 @@ class Network:
             kernel_size += 1
         print('Window of integer size', kernel_size)
 
+        # Define median absolute deviation
+        MAD = lambda x: np.nanmedian(np.abs(x - np.nanmedian(x)))
+        if deviator == 'std':
+            devfun = np.nanstd
+        elif deviator == 'mad':
+            devfun = MAD
+        else:
+            raise NotImplementedError('Unsupported deviation function.')
+
+        # Open a log file
+        if log:
+            lfid = open('filter.log', 'w')
+
         # Loop over the data
         for component in self.inst.components:
+
+            if log:
+                lfid.write('Component %s\n' % component)
 
             # Get data for this component
             comp_df = self.get(component, None, with_date=True)
@@ -312,10 +327,13 @@ class Network:
                 # mask
                 if mask:
                     filtered[np.isnan(data)] = np.nan
+                # Compute residual
+                residual = data - filtered
+                # Write deviations to log
+                if log: lfid.write('- %s: %f\n' % (statname, devfun(residual)))
                 # Remove outliers
                 if remove_outliers:
-                    residual = data - filtered
-                    std = np.nanstd(residual)
+                    std = devfun(residual)
                     if std > std_thresh:
                         continue
                     data[np.abs(residual) > nstd*std] = np.nan
@@ -340,6 +358,9 @@ class Network:
             sigma_df = self.get('sigma_' + component, None, with_date=True)
             sigma_df.to_sql('sigma_' + component, engine_out.engine, if_exists='replace')
 
+        if log:
+            lfid.close()
+
         return
 
 
@@ -363,18 +384,32 @@ class Network:
         for component in self.inst.components:
 
             # Retrieve component data frame
+            print('Component', component)
             comp_df = self.get(component, None, with_date=False)
             filt_df = self.get('filt_' + component, None, with_date=False)
 
             # First loop over the stations to compute residuals; fill
             # gaps with random noise
             for statname in self.names:
+                #if component != 'east' and statname != 'cgtc': continue
+                # Get data and filtered data
                 data = comp_df[statname].values
                 filt = filt_df[statname].values
+                # Compute residual
                 residual = data - filt
                 residual -= np.nanmean(residual)
+                # Compute standard deviation of residual
+                #std = np.nanstd(residual)
+                std = np.nanmedian(np.abs(residual - np.nanstd(residual)))
+                # Threshold outliers
+                ind = np.abs(residual) > 4*std
+                residual[ind] = np.nan
+                # Fill in data gaps with Gaussian noise 
                 ind = np.isnan(residual).nonzero()[0]
                 residual[ind] = np.nanstd(residual) * np.random.randn(len(ind))
+                #import matplotlib.pyplot as plt
+                #plt.close('all'); plt.plot(self.tdec, residual, 'o'); plt.show(); sys.exit()
+                # Save final residual
                 comp_df[statname] = residual
 
             # Perform decomposition
@@ -395,8 +430,8 @@ class Network:
             ax1.plot(self.tdec, temporal['east'], '-b')
             ax2.plot(self.tdec, temporal['north'], '-b')
             ax3.plot(self.tdec, temporal['up'], '-b')
-            ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'],
-                scale=1.0)
+            scale = 10.0 * (np.mean(spatial['east']) + np.mean(spatial['north']))
+            ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'], scale=abs(scale))
             for lon,lat,name in zip(self.lon,self.lat,self.names):
                 ax4.annotate(name, xy=(lon,lat))
             plt.show()
@@ -408,7 +443,7 @@ class Network:
                 comp_df.to_sql('raw_' + component, engine_out.engine, if_exists='replace')
                 for cnt, statname in enumerate(self.names):
                     residual = comp_df.loc[:,statname] - A[:,cnt]
-                    residual -= np.nanmean(residual)
+                    #residual -= np.nanmean(residual)
                     comp_df.loc[:,statname] = residual
                 comp_df.to_sql(component, engine_out.engine, if_exists='replace')
                 sigma_df = self.get('sigma_' + component, None, with_date=True)
@@ -436,7 +471,12 @@ class Network:
             filt_df = self.get('filt_' + component, None, with_date=False)
             residual = comp_df.values - filt_df.values
             for j in range(residual.shape[1]):
-                residual[:,j] -= np.nanmean(residual[:,j])
+                stat_resid = residual[:,j] - np.nanmean(residual[:,j])
+                # Threshold outliers
+                std = np.nanmedian(np.abs(residual - np.nanstd(residual)))
+                stat_resid[np.abs(stat_resid) > 4*std] = np.nan
+                # Save
+                residual[:,j] = stat_resid
             
             # Perform decomposition
             tempMat, spatMat, errors = ALS_factor(residual, beta, 
@@ -457,12 +497,13 @@ class Network:
             ax1.plot(self.tdec, temporal['east'], '-b')
             ax2.plot(self.tdec, temporal['north'], '-b')
             ax3.plot(self.tdec, temporal['up'], '-b')
-            ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'], scale=10.0)
+            scale = 0.25 * (np.nanstd(temporal['east']) + np.nanstd(temporal['north']))
+            ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'], scale=scale)
             for lon,lat,name in zip(self.lon,self.lat,self.names):
                 ax4.annotate(name, xy=(lon,lat))
-            plt.savefig('results_cme_als.png', dpi=200, bbox_inches='tight')
-            #plt.show()
-            #sys.exit()
+            #plt.savefig('results_cme_als.png', dpi=200, bbox_inches='tight')
+            plt.show()
+            sys.exit()
 
         if remove:
             for component in self.inst.components:
@@ -509,18 +550,18 @@ class Network:
             # Beginning region
             halfWindow = 0
             for i in range(kernel_size//2):
-                filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+                filt_data[i] = np.nanmedian(dat[i-halfWindow:i+halfWindow+1])
                 halfWindow += 1
 
             # Middle region
             halfWindow = kernel_size // 2
             for i in range(halfWindow, nobs - halfWindow):
-                filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+                filt_data[i] = np.nanmedian(dat[i-halfWindow:i+halfWindow+1])
 
             # Ending region
             halfWindow -= 1
             for i in range(nobs - halfWindow, nobs):
-                filt_data[i] = nanmedian(dat[i-halfWindow:i+halfWindow+1])
+                filt_data[i] = np.nanmedian(dat[i-halfWindow:i+halfWindow+1])
                 halfWindow -= 1
 
         return filt_data
