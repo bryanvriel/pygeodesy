@@ -48,13 +48,18 @@ class Network:
         if self.rank == 0:
             print(' - number of stations:', self.nstat)
 
-        # Save the observation dates
-        dates = pd.read_sql_table(self.inst.components[0], self.engine.engine,
-            columns=['DATE']).values
-        dates = np.array([pd.to_datetime(date, infer_datetime_format=True)
-            for date in dates])
-        self.dates = np.array([dtime.datetime.utcfromtimestamp(date.astype('O') / 1.0e9)
-            for date in dates])
+        # Save the observation dates in first valid table
+        for table in self.engine.tables().values:
+            try:
+                dates = pd.read_sql_table(table[0], self.engine.engine,
+                    columns=['DATE']).values
+            except:
+                continue
+            dates = np.array([pd.to_datetime(date, infer_datetime_format=True)
+                for date in dates])
+            self.dates = np.array([dtime.datetime.utcfromtimestamp(date.astype('O') / 1.0e9)
+                for date in dates])
+            break
 
         # Convert dates to decimal year and save
         self.tdec = np.array([datestr2tdec(pydtime=date) for date in self.dates])

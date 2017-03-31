@@ -46,8 +46,6 @@ def velmap(optdict):
     network = Network(inst, engine)
     print(' - %d stations' % network.nstat)
 
-    
-
     # Read metadata
     meta = engine.meta()
 

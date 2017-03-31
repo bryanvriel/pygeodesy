@@ -1,6 +1,7 @@
 #-*- coding: utf-8 -*-
 
 import numpy as np
+from datetime import datetime
 from giant.utilities import timefn
 import sys
 
@@ -10,7 +11,7 @@ class Model:
     Class for handling time series predictions.
     """
 
-    def __init__(self, t, collection=None, rank=0):
+    def __init__(self, t, collection=None, t0=None, tf=None, rank=0):
         """
         Initialize the Model class with a TimeRepresentation object.
 
@@ -20,6 +21,10 @@ class Model:
             Array of observation times as datetime objects
         collection: {giant.utilities.timefn.TimefnCollection, None}, optional
             GIAnT TimefnCollection instance. If None, constructs a polynomial collection.
+        t0: datetime or None
+            Starting date for estimating parameters.
+        tf: datetime or None
+            Ending date for estimating parameters.
         rank: int, optional
             MPI rank. Default: 1.
         """
@@ -40,6 +45,11 @@ class Model:
         self.npar = self.G.shape[1]
         self.ifull = np.arange(self.npar, dtype=int)
         self._updatePartitionSizes()
+
+        # Make mask for time window for estimating parameters
+        t0 = datetime.strptime(t0, '%Y-%m-%d') if t0 is not None else t[0]
+        tf = datetime.strptime(tf, '%Y-%m-%d') if tf is not None else t[-1]
+        self.time_mask = (t >= t0) * (t <= tf)
 
         # Save the regularization indices
         self.reg_indices = fnParts['reg']
@@ -66,7 +76,7 @@ class Model:
         """
 
         # Do the inversion
-        ind = np.isfinite(d)
+        ind = np.isfinite(d) * self.time_mask
         if wgt is None:
             m, Cm = solver.invert(self.G[ind,:], d[ind])
         else:

@@ -47,6 +47,11 @@ def parse():
     detrend.add_argument('-cfg', action='store', default='data.cfg',
         help='Detrend configuration file. Default: data.cfg.')
 
+    # Options for modelfit
+    detrend = subparsers.add_parser('modelfit', help='Fit model to time series in database.')
+    detrend.add_argument('-cfg', action='store', default='data.cfg',
+        help='Modelfit configuration file. Default: data.cfg.')
+
     # Options for elasticnet
     elasticnet = subparsers.add_parser('elasticnet', 
         help='Perform elastic net decomposition on database.')
@@ -78,7 +83,7 @@ if __name__ == '__main__':
     inputs = parse()
 
     if inputs.module in ['makedb', 'subnet', 'clean', 'cme', 'filter', 'detrend', 
-        'elasticnet', 'plot', 'netmap', 'velmap']:
+        'modelfit', 'elasticnet', 'plot', 'netmap', 'velmap']:
 
         # Parse the configuration file for the given module
         config = pg.Configuration(inputs.cfg, inputs.module)
@@ -98,6 +103,9 @@ if __name__ == '__main__':
 
         elif inputs.module == 'cme':
             pg.network.cme(config())
+
+        elif inputs.module == 'modelfit':
+            pg.network.modelfit(config())
 
         elif inputs.module == 'detrend':
             pg.network.detrend(config())
