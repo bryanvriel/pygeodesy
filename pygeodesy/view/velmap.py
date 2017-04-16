@@ -87,6 +87,7 @@ def velmap(optdict):
         # Loop over stations
         for statname in meta['id']:
             print(statname)
+            if statname in ['pcal']: continue
             east_df = network.get('east', statname)
             north_df = network.get('north', statname)
 
@@ -114,6 +115,10 @@ def velmap(optdict):
     figsize = (int(opts['figwidth']), int(opts['figheight']))
     fig1, ax_map = plt.subplots(figsize=figsize)
     bmap = network.makeBasemap(ax_map)
+
+    for name, lon, lat in zip(meta['id'].values, meta['lon'].values, meta['lat'].values):
+        sx, sy = bmap(lon, lat)
+        plt.annotate(name, xy=(sx,sy))
 
     scale = float(opts['scale']) if opts['scale'] is not None else None
     q = bmap.quiver(meta['lon'].values, meta['lat'].values, east, north, 

@@ -21,6 +21,7 @@ defaults = {
     'tend': None,
     'ylim': (None, None),
     'model': 'filt',
+    'output_dir': 'figures',
     'figwidth': 10,
     'figheight': 6,
     'kml': None,
@@ -53,7 +54,12 @@ def plot(optdict):
         return
 
     # Get the list of stations to plot
-    statnames = opts['stations'].split()
+    if opts['stations'] == 'all':
+        import pygeodesy.network.Network as Network
+        network = Network(inst, engine)
+        statnames = network.names
+    else: 
+        statnames = opts['stations'].split()
 
     # Read data after checking for existence of component
     if opts['component'] == 'all':
@@ -77,13 +83,25 @@ def plot(optdict):
         y0, y1 = opts['ylim']
 
     # Set the figure size
-    figsize = (int(opts['figwidth']), int(opts['figheight']))
+    figsize = (int(opts['figwidth']), int(opts['figheight'])) 
     fig, axes = plt.subplots(nrows=len(components), figsize=figsize)
     if type(axes) not in (list, np.ndarray):
         axes = [axes]
 
+    # Check output directory exists if we're saving
+    if opts['save'] and not os.path.isdir(opts['output_dir']):
+        os.makedirs(opts['output_dir'])
+
     # Loop over stations
     for statname in statnames:
+
+        # Check if we had previously closed the figure and need to make new one
+        if fig is None and axes is None:
+            fig, axes = plt.subplots(nrows=len(components), figsize=figsize)
+            if type(axes) not in (list, np.ndarray):
+                axes = [axes]
+
+        print(statname)
 
         for ax, component in zip(axes, components):
 
@@ -127,11 +145,18 @@ def plot(optdict):
 
         axes[0].set_title(statname, fontsize=18)
         axes[-1].set_xlabel('Year', fontsize=18)
+
+        #plt.savefig('temp.png'); sys.exit()
+        #plt.show()
+        #sys.exit()
+
         if opts['save']:
-            plt.savefig('%s_%s.png' % (statname, component), 
+            plt.savefig('%s/%s_%s.png' % (opts['output_dir'], statname, component), 
                 dpi=200, bbox_inches='tight')
-        plt.show()
-        plt.close('all')        
+            fig = axes = None
+        else:
+            plt.show()
+        plt.close('all') 
 
 
 def model_and_detrend(data, engine, statname, component, model):
@@ -167,10 +192,14 @@ def model_and_detrend(data, engine, statname, component, model):
 
         # Remove parts we do not want
         for ftype in parts_to_remove:
-            signal = pd.read_sql_table('%s_%s' % (ftype, component), engine.engine,
-                columns=[statname,]).values.squeeze()
-            fit -= signal
-            data -= signal
+            try:
+                signal = pd.read_sql_table('%s_%s' % (ftype, component), engine.engine,
+                    columns=[statname,]).values.squeeze()
+                fit -= signal
+                data -= signal
+                print('removed', ftype)
+            except ValueError:
+                pass
 
     elif filt_comp in tables and model_comp not in tables:
         fit = pd.read_sql_table('filt_%s' % component, engine.engine,

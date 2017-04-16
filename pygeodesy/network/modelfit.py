@@ -32,6 +32,7 @@ defaults = {
     'scale': 1.0,
     'special_stats': None,
     'std_thresh': 1.0e10,
+    'min_timespan': 365.0*40,
 }
 
 def modelfit(optdict):
@@ -72,7 +73,7 @@ def modelfit(optdict):
 
     # Create a model for handling the time function
     model = Model(network.dates, collection=collection, t0=opts['t0'], tf=opts['tf'])
-    
+
     # Create a solver
     print('Creating solver')
     try:
@@ -106,6 +107,9 @@ def modelfit(optdict):
         coeff_sigma_dat = {}
         for statcnt, statname in enumerate(network.sub_names):
 
+            #if statname != 'srgd':
+            #    continue
+
             # Scale data
             data_df[statname] *= float(opts['scale'])
             sigma_df[statname] *= float(opts['scale'])
@@ -124,9 +128,9 @@ def modelfit(optdict):
     
                 # Remove any obvious outliers
                 if iternum > 1:
-                    outlierInd = np.abs(dat) > 400.0
-                else:
                     outlierInd = np.abs(dat) > 1000.0
+                else:
+                    outlierInd = np.abs(dat) > 2000.0
                 dat[outlierInd] = np.nan
 
                 # Construct subset indices for inversion
@@ -134,6 +138,14 @@ def modelfit(optdict):
                 nvalid = ind.nonzero()[0].size
                 if nvalid < int(opts['nvalid']):
                     print('Skipping %s due to too few good data' % statname)
+                    isStatGood = False
+                    break
+
+                # Check time span of data matches minimum time span
+                valid_dates = network.dates[ind]
+                tspan = (valid_dates[-1] - valid_dates[0]).days
+                if tspan < float(opts['min_timespan']):
+                    print('Skipping %s due to too small timespan' % statname)
                     isStatGood = False
                     break
 
@@ -147,6 +159,14 @@ def modelfit(optdict):
                 # Model performs reconstruction (only for detecting outliers)
                 fit_dict = model.predict(mvec)
                 filt_signal = fit_dict['full']
+
+                #fit = fit_dict['secular'] + fit_dict['step']
+                ##fit = fit_dict['full']
+                #plt.plot(dat[ind], 'o')
+                #plt.plot(fit[ind], '-r')
+                #plt.plot(fit_dict['transient'][ind], '-g')
+                #plt.show()
+                #plt.close('all')
 
                 # Compute misfit and standard deviation
                 misfit = dat - filt_signal
