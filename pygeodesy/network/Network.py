@@ -286,7 +286,7 @@ class Network:
         """
         Call median filter function.
         """
-        from progressbar import ProgressBar, Bar, Percentage
+        from tqdm import tqdm
 
         if kernel_size % 2 == 0:
             kernel_size += 1
@@ -320,8 +320,8 @@ class Network:
 
             # Make a progress bar for the stations
             keep_stat = []
-            pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=self.nstat).start()
-            for scnt, statname in enumerate(self.names):
+            for scnt in tqdm(range(len(self.names))):
+                statname = self.names[scnt]
                 # Get the data
                 data = comp_df[statname].values
                 # Skip if all NaN
@@ -347,8 +347,6 @@ class Network:
                 comp_df[statname] = data 
                 filt_df[statname] = filtered
                 keep_stat.append(statname)
-                pbar.update(scnt + 1)
-            pbar.finish()
 
             # Update metadata if list of good stations has changed
             self.updateMetadata(keep_stat, engine_out)

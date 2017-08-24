@@ -46,8 +46,18 @@ class Interface:
                 sys.stdout.write(' - file %4d / %4d\r' % (filecnt, len(filelist)))
                 sys.stdout.flush()
 
-            # Load all the data using numpy into an array of strings
-            all_data = np.atleast_2d(np.loadtxt(filepath, dtype=bytes).astype(str))
+            # If fixed widths were provided, use those via pandas
+            if self.inst.fixedWidths is not None:
+                df = pd.read_fwf(filepath, widths=self.inst.fixedWidths, comment='#')
+                all_data = df.values
+
+            # Or load all the data using numpy into an array of strings
+            else:
+                try:
+                    all_data = np.atleast_2d(np.loadtxt(filepath, dtype=bytes).astype(str))
+                except ValueError:
+                    print('Wrong number of columns for file', filepath)
+                    continue
             Nobs = all_data.shape[0]
 
             # A little string parsing to get the station id
@@ -84,7 +94,11 @@ class Interface:
 
             # Read meta data from header if we need to
             if read_header:
-                self.inst.read_meta_header(filepath, meta_dict=meta_dict)
+                try:
+                    self.inst.read_meta_header(filepath, meta_dict=meta_dict)
+                except ValueError:
+                    print('Trouble reading header for', filepath)
+                    pass
 
             # Write to table if we meet the chunksize
             if obs_cnt > chunk_size:

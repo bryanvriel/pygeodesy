@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import sys
+import os
 
 from .Network import Network
 from pygeodesy.db.Engine import Engine
@@ -35,6 +36,10 @@ def detrend(optdict):
     model_engine = Engine(url=opts['model'])
 
     # Create engine for detrended database
+    outpath = opts['output'].split('///')[-1]
+    if os.path.isfile(outpath):
+        print('Removing old file', outpath)
+        os.remove(outpath)
     engine_out = Engine(url=opts['output'])
     engine_out.initdb(ref_engine=engine)
 
@@ -83,6 +88,7 @@ def detrend(optdict):
         for model_comp in ('secular', 'seasonal', 'transient', 'step'):
             if model_comp in parts_to_remove:
                 continue
+            print('Saving model component', model_comp)
             secular_df = pd.read_sql_table('%s_%s' % (model_comp, component),
                 model_engine.engine, index_col='DATE', columns=read_columns)
             secular_df.to_sql('%s_%s' % (model_comp, component),

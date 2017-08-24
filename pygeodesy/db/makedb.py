@@ -23,6 +23,7 @@ defaults = {
     'chunk_size': 100000,
     'extension': '.neu',
     'preprocess': False,
+    'fixed_widths': None,
 }
 
 
@@ -48,6 +49,8 @@ def makedb(optdict):
     inst = instrument.select(opts['type'], fmt=opts['format'])
     # Set its format for reading ASCII data
     inst.updateASCIIformat(opts['format'], columns=opts['columns'])
+    # Parse any fixed width strings
+    inst.parseFixedWidths(opts['fixed_widths'])
 
     # Read a metadata file if provided
     inst.read_metadata_ascii(opts['metafile'], fmtdict=opts['metafmt'])

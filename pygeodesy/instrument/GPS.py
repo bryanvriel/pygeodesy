@@ -35,6 +35,18 @@ class GPS(TimeSeries):
         return
 
 
+    def parseFixedWidths(self, fwf_string):
+        """
+        Parse a string of comma-separated integers denoting the list of
+        field widths in a data file.
+        """
+        if fwf_string is not None:
+            self.fixedWidths = [int(x) for x in fwf_string.split(',')]
+        else:
+            self.fixedWidths = None
+        return
+
+
     def updateASCIIformat(self, fmt, columns=None, read_header=False):
         """
         Set the column format from either a pre-supported format or
@@ -54,6 +66,7 @@ class GPS(TimeSeries):
             elif fmt == 'sopac':
                 new_columns = {'year': 1, 'doy': 2, 'north': 3, 'east': 4, 'up': 5,
                     'sigma_north': 6, 'sigma_east': 7, 'sigma_up': 8}
+                self.read_header = True
             elif fmt == 'gipsy_tseries':
                 new_columns = {'east': 1, 'north': 2, 'up': 3, 'sigma_east': 4,
                     'sigma_north': 5, 'sigma_up': 6, 'year': 11, 'month': 12,
@@ -103,7 +116,7 @@ class GPS(TimeSeries):
 
             # Parse header
             factors = {'N': 1.0, 'E': 1.0, 'W': -1.0, 'S': -1.0}
-            with open(fname, 'r') as fid:
+            with open(filename, 'r') as fid:
                 for line in fid:
                     if not line.startswith('#'):
                         break

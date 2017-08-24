@@ -25,6 +25,7 @@ defaults = {
     'figwidth': 10,
     'figheight': 6,
     'kml': None,
+    'detrend_data': True,
 }
 
 
@@ -110,7 +111,8 @@ def plot(optdict):
             data = data[statname].values.squeeze()
             
             # Try to read model data
-            fit = model_and_detrend(data, engine, statname, component, opts['model'])
+            fit = model_and_detrend(data, engine, statname, component,
+                opts['model'], detrend_data=opts['detrend_data'])
 
             # Remove means
             dat_mean = np.nanmean(data)
@@ -159,7 +161,7 @@ def plot(optdict):
         plt.close('all') 
 
 
-def model_and_detrend(data, engine, statname, component, model):
+def model_and_detrend(data, engine, statname, component, model, detrend_data=True):
 
     # Get list of tables in the database
     tables = engine.tables(asarray=True)
@@ -196,7 +198,8 @@ def model_and_detrend(data, engine, statname, component, model):
                 signal = pd.read_sql_table('%s_%s' % (ftype, component), engine.engine,
                     columns=[statname,]).values.squeeze()
                 fit -= signal
-                data -= signal
+                if detrend_data:
+                    data -= signal
                 print('removed', ftype)
             except ValueError:
                 pass
