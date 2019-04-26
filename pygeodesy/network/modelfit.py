@@ -26,6 +26,7 @@ defaults = {
     'penalty': 1.0,
     'output_phase': None,
     'output_amp': None,
+    'output_secular': None,
     'user': 'userCollection.py',
     'iter': 1,
     'solver': 'RidgeRegression',
@@ -78,7 +79,11 @@ def modelfit(optdict):
     print('Creating solver')
     try:
         Solver = getattr(solvers, opts['solver'])
-        solver = Solver(model.reg_indices, float(opts['penalty']), regMat=iCm)
+        if opts['solver'] == 'LassoRegression':
+            solver = Solver(model.reg_indices, float(opts['penalty']), regMat=iCm,
+                estimate_uncertainty=True)
+        else:
+            solver = Solver(model.reg_indices, float(opts['penalty']), regMat=iCm)
     except AttributeError:
         print('Specified solver not supported.')
         sys.exit()
@@ -161,7 +166,7 @@ def modelfit(optdict):
                 filt_signal = fit_dict['full']
 
                 #fit = fit_dict['secular'] + fit_dict['step']
-                ##fit = fit_dict['full']
+                #fit = fit_dict['full']
                 #plt.plot(dat[ind], 'o')
                 #plt.plot(fit[ind], '-r')
                 #plt.plot(fit_dict['transient'][ind], '-g')
@@ -273,6 +278,13 @@ def modelfit(optdict):
                             stat_meta = meta_sub.loc[meta_sub['id'] == statname]
                             afid.write('%f %f %f 0.5\n' % (float(stat_meta['lon']),
                                 float(stat_meta['lat']), amp))
+
+
+            # Write secular data if requested
+            if opts['output_secular'] is not None:
+                pass
+                #with open(opts['output_secular'], 'w') as sfid:
+                #    for statname in secular_dat.items():
             
                     
         else:

@@ -16,7 +16,7 @@ import giant.solvers as solvers
 
 # Define the default options
 defaults = {
-    'input': None,
+    'input': None,                              # Input database
     'output': 'sqlite:///cme.db',
     'remove': True,
     'method': 'pca',

@@ -340,6 +340,7 @@ def ALS_factor(A, beta, num_features=None, max_step=30):
         misfit = (A - prediction).flatten()
         ind = np.isfinite(misfit)
         error = np.dot(misfit[ind], misfit[ind])
+        print(' - ALS iteration %02d error: %f' % (step, error))
 
         # Update
         errors.append(error)
