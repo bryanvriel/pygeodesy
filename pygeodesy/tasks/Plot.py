@@ -34,7 +34,7 @@ class Plot(pg.components.task, family='pygeodesy.plot'):
     tend = pyre.properties.float(default=None)
     tend.doc = 'Ending decimal year for plot'
 
-    ylim = pyre.properties.list(default=[None, None])
+    ylim = pyre.properties.str(default=None)
     ylim.doc = 'Y-limit for plot'
 
     model = pyre.properties.str(default='filt')
@@ -101,7 +101,7 @@ class Plot(pg.components.task, family='pygeodesy.plot'):
         tend = np.datetime64(self.tend) if self.tend is not None else None
 
         # Determine y-axis bounds
-        y0, y1 = [float(val) for val in self.ylim]
+        y0, y1 = [float(val) for val in self.ylim.split(',')]
 
         # Set the figure size
         figsize = (self.figwidth, self.figheight) 
@@ -179,55 +179,6 @@ class Plot(pg.components.task, family='pygeodesy.plot'):
             else:
                 plt.show()
             plt.close('all') 
-
-
-def model_and_detrend(data, engine, statname, component, model):
-
-    # Get list of tables in the database
-    tables = engine.tables(asarray=True)
-
-    # Keys to look for
-    model_comp = '%s_%s' % (model, component) if model != 'filt' else 'None'
-    filt_comp = 'filt_' + component
-
-    # Construct list of model components to remove (if applicable)
-    if model == 'secular':
-        parts_to_remove = ['seasonal', 'transient', 'step']
-    elif model == 'seasonal':
-        parts_to_remove = ['secular', 'transient', 'step']
-    elif model == 'transient':
-        parts_to_remove = ['secular', 'seasonal', 'step']
-    elif model == 'step':
-        parts_to_remove = ['secular', 'seasonal', 'transient']
-    elif model in ['full', 'filt']:
-        parts_to_remove = []
-    else:
-        assert False, 'Unsupported model component %s' % model
-
-    # Make the model and detrend the data
-    fit = np.nan * np.ones_like(data)
-    if model_comp in tables:
-
-        # Read full model data
-        fit = pd.read_sql_table('full_' + component, engine.engine, 
-            columns=[statname,]).values.squeeze()
-
-        # Remove parts we do not want
-        for ftype in parts_to_remove:
-            try:
-                signal = pd.read_sql_table('%s_%s' % (ftype, component), engine.engine,
-                                           columns=[statname,]).values.squeeze()
-                fit -= signal
-                data -= signal
-                print('removed', ftype)
-            except ValueError:
-                pass
-
-    elif filt_comp in tables and model_comp not in tables:
-        fit = pd.read_sql_table('filt_%s' % component, engine.engine,
-            columns=[statname,]).values.squeeze()
-
-    return fit
 
 
 # end of file

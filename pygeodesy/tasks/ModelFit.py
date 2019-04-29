@@ -6,7 +6,7 @@ from mpi4py import MPI
 import pandas as pd
 import sys
 
-import pygeodesy
+import pygeodesy as pg
 import pyre
 
 from giant.utilities import timefn
@@ -308,9 +308,9 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
 
                 # Write secular data if requested
                 if self.output_secular is not None:
-                    with open(self.output_secular, 'w') as sfid:
-                        for statname in secular_dat.items():
-                
+                    pass
+                    #with open(self.output_secular, 'w') as sfid:
+                    #    for statname in secular_dat.items():
                         
             else:
                 comm.send(results, dest=0, tag=77)

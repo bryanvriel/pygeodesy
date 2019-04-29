@@ -56,8 +56,8 @@ class Filter(pg.components.task, family='pygeodesy.filter'):
         network = Network(inst, engine)
 
         # Filter
-        network.filterData(engine_out, self.kernel_size), mask=self.mask,
-                           remove_outliers=self.remove_outliers, nstd=self.nstd),
+        network.filterData(engine_out, self.kernel_size, mask=self.mask,
+                           remove_outliers=self.remove_outliers, nstd=self.nstd,
                            std_thresh=self.std_thresh, deviator=self.deviator,
                            log=self.log)
 

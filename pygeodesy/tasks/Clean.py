@@ -1,9 +1,10 @@
 #-*- coding: utf-8 -*-
 
 import pygeodesy as pg
+import pyre
 import sys
 
-class Clean(pygeodesy.components.task, family='pygeodesy.clean'):
+class Clean(pg.components.task, family='pygeodesy.clean'):
     """
     Clean a time series by removing outliers and removing bad values.
     """

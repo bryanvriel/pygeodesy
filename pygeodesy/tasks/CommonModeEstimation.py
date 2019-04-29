@@ -26,7 +26,7 @@ class CommonModeEstimation(pg.components.task, family='pygeodesy.cme'):
     beta = pyre.properties.float(default=1.0)
     beta.doc = 'Regularization parameter for ALS estimator'
 
-    max_step = pyre.properties.int(deafult=30)
+    max_step = pyre.properties.int(default=30)
     max_step.doc = 'Number of iterations for ALS estimator'
 
     @pyre.export

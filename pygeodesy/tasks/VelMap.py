@@ -1,5 +1,7 @@
 #-*- coding: utf-8 -*_
 
+import pygeodesy as pg
+import pyre
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -27,7 +29,7 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
     scale = pyre.properties.float(default=1.0)
     scale.doc = 'Quiver scale factor'
 
-    quiverkey = pyre.properties.float(deafult=None)
+    quiverkey = pyre.properties.float(default=None)
     quiverkey.doc = 'Reference vector magnitude for quiver legend'
 
     model = pyre.properties.str(default='filt')
