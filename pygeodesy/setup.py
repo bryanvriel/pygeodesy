@@ -12,9 +12,10 @@ def configuration(parent_package='', top_path=None):
     config.add_subpackage('instrument')
     config.add_subpackage('model')
     config.add_subpackage('view')
+    config.add_subpackage('components')
+    config.add_subpackage('tasks')
     config.make_config_py()
     return config
-
 
 if __name__ == '__main__':
     from numpy.distutils.core import setup

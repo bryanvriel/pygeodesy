@@ -35,18 +35,6 @@ class GPS(TimeSeries):
         return
 
 
-    def parseFixedWidths(self, fwf_string):
-        """
-        Parse a string of comma-separated integers denoting the list of
-        field widths in a data file.
-        """
-        if fwf_string is not None:
-            self.fixedWidths = [int(x) for x in fwf_string.split(',')]
-        else:
-            self.fixedWidths = None
-        return
-
-
     def updateASCIIformat(self, fmt, columns=None, read_header=False):
         """
         Set the column format from either a pre-supported format or

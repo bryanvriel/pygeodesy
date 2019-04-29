@@ -1,6 +1,8 @@
 #-*- coding: utf-8
 
-from .makedb import makedb
-from .subnet import subnet
+# The public interface
+from . import Engine
+from . import Interface
+from . import utils
 
 # end of file

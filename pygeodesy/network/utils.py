@@ -29,10 +29,10 @@ def partitionData(solver, network, opts, comm):
     # Master work
     if rank == 0:
         # Load all data into contiguous arrays
-        datArr, wgtArr = network.getDataArrays(order='columns', sigmas=opts['sigmas'],
-            components=[opts['component']], scale=float(opts['scale']))
+        datArr, wgtArr = network.getDataArrays(order='columns', sigmas=opts.sigmas,
+            components=[opts.component], scale=opts.scale)
         # Read in time function
-        collection, iCm = load_collection(network.dates, opts['user'])
+        collection, iCm = load_collection(network.dates, opts.user)
     else:
         datArr = wgtArr = collection = iCm = None
 
@@ -129,11 +129,11 @@ def partitionData(solver, network, opts, comm):
     if rank == 0: print('Making smoothing matrix')
 
     # Compute station distances and weighting matrix for all stations
-    if opts['correlation_length'] is not None:
-        L0 = float(opts['correlation_length'])
+    if opts.correlation_length is not None:
+        L0 = opts.correlation_length
     else:
         L0 = None
-    weightMat = network.computeNetworkWeighting(smooth=float(opts['oversmooth']), L0=L0)
+    weightMat = network.computeNetworkWeighting(smooth=opts.oversmooth, L0=L0)
     
     # Initialize array for local prior covariance matrix
     D = np.zeros((solver.procN,solver.procN))
@@ -157,8 +157,8 @@ def distributeSolutions(mvec, engine, model, network, opts):
     """
 
     # Cache some options
-    scale = float(opts['scale'])
-    component = opts['component']
+    scale = opts.scale
+    component = opts.component
 
     # First write original data to database
     df = network.get(component, None, scale=scale, with_date=True)
@@ -284,8 +284,8 @@ def updatePenalties(solver, opts, model, rank, component):
     """
     Check if penalties have been changed. If so, re-initialize CVXOPT data.
     """
-    sparse = float(opts['sparse_penalty'])
-    smooth = float(opts['smooth_penalty'])
+    sparse = opts.sparse_penalty
+    smooth = opts.smooth_penalty
     if (abs(solver.sparsePenalty - sparse) > 1.0e-5 or
         abs(solver.smoothPenalty - smooth) > 1.0e-5):
         if rank == 0: print('Updating CVXOPT data')
