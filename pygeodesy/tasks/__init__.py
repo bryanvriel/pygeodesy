@@ -19,15 +19,15 @@ def clean():
     from .Clean import Clean
     return Clean
 
-@pyre.foundry(implements=pg.action, tip='Perform common mode estimation on data')
-def cme():
-    from .CommonModeEstimation import CommonModeEstimation
-    return CommonModeEstimation
-
 @pyre.foundry(implements=pg.action, tip='Apply low-pass/smoothing filter to time series database')
 def filter():
     from .Filter import Filter
     return Filter
+
+@pyre.foundry(implements=pg.action, tip='Perform common mode estimation on data')
+def cme():
+    from .CommonModeEstimation import CommonModeEstimation
+    return CommonModeEstimation
 
 @pyre.foundry(implements=pg.action, tip='Fit temporal model to time series database')
 def modelfit():

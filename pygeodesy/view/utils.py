@@ -1,5 +1,8 @@
 #-*- coding: utf-8 -*-
 
+import pandas as pd
+import numpy as np
+
 def model_and_detrend(data, engine, statname, component, model):
 
     # Get list of tables in the database
@@ -44,7 +47,7 @@ def model_and_detrend(data, engine, statname, component, model):
 
     elif filt_comp in tables and model_comp not in tables:
         fit = pd.read_sql_table('filt_%s' % component, engine.engine,
-            columns=[statname,]).values.squeeze()
+                                columns=[statname,]).values.squeeze()
 
     return fit
 

@@ -282,7 +282,7 @@ class Network:
 
 
     def filterData(self, engine_out, kernel_size, mask=False, remove_outliers=False,
-        nstd=5, std_thresh=100.0, deviator='std', log=False):
+                   nstd=5, std_thresh=100.0, deviator='std', log=False):
         """
         Call median filter function.
         """
@@ -367,8 +367,8 @@ class Network:
         return
 
 
-    def decompose(self, engine_out, n_comp=1, plot=True, method='pca', 
-        remove=False):
+    def decompose(self, engine_out, n_comp=1, plot=True, method='pca', remove=False,
+                  qscale=None):
         """
         Peform principal component analysis on a stack of time series.
         """
@@ -433,8 +433,9 @@ class Network:
             ax1.plot(self.tdec, temporal['east'], '-b')
             ax2.plot(self.tdec, temporal['north'], '-b')
             ax3.plot(self.tdec, temporal['up'], '-b')
-            scale = 10.0 * (np.mean(spatial['east']) + np.mean(spatial['north']))
-            ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'], scale=abs(scale))
+            if qscale is None:
+                qscale = 100.0 * (np.mean(spatial['east']) + np.mean(spatial['north']))
+            ax4.quiver(self.lon, self.lat, spatial['east'], spatial['north'], scale=abs(qscale))
             for lon,lat,name in zip(self.lon,self.lat,self.names):
                 ax4.annotate(name, xy=(lon,lat))
             plt.show()

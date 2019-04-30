@@ -2,7 +2,7 @@
 
 import pyre
 
-class PyGeodesy(pyre.plexus, family='pygeodesy.components.plexus'):
+class PyGeodesy(pyre.plexus, family='pygeodesy.global'):
     """
     The pygeodesy executive and application wrapper.
     """
@@ -20,8 +20,7 @@ class PyGeodesy(pyre.plexus, family='pygeodesy.components.plexus'):
         """
         The main entrypoint into the plexus. Print out some messages about data types.
         """
-        print('pygeodesy')
-        print(self.data_type)
+        print('\nPyGeodesy data type:', self.data_type.upper(), '   format:', self.data_format)
         super().main(*args, **kwargs)
 
     def help(self, **kwargs):

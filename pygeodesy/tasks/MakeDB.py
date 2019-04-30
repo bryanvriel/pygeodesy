@@ -2,6 +2,7 @@
 
 import pygeodesy as pg
 import pandas as pd
+import numpy as np
 import datetime
 import pyre
 import sys
@@ -12,14 +13,17 @@ class MakeDB(pg.components.task, family='pygeodesy.makedb'):
     Make a time series database.
     """
 
-    columns = pyre.properties.int(default=None)
-    columns.doc = 'Number of columns in ASCII file of raw data'
+    column_fmt = pyre.properties.str(default=None)
+    column_fmt.doc = 'Column format of ASCII files (e.g. {n: 0, e: 1, n: 2})'
 
     directory = pyre.properties.str(default=None)
     directory.doc = 'Directory of raw data'
 
     dbname = pyre.properties.str(default='data.db')
-    dbname.doc = 'Output database filename'
+    dbname.doc = 'Output database filename (default data.db)'
+
+    dbtype = pyre.properties.str(default='sqlite')
+    dbtype.doc = 'Type of database (default: sqlite)'
 
     filelist = pyre.properties.str(default=None)
     filelist.doc = 'Filename of ASCII file of list of data files to process'
@@ -31,10 +35,10 @@ class MakeDB(pg.components.task, family='pygeodesy.makedb'):
     metafmt.doc = 'Column format of filename containing station coordinates'
 
     chunk_size = pyre.properties.int(default=100000)
-    chunk_size.doc = 'Chunk size of database'
+    chunk_size.doc = 'Chunk size of database (default 100000)'
 
     extension = pyre.properties.str(default='.neu')
-    extension.doc = 'File extension of raw data files'
+    extension.doc = 'File extension of raw data files (default: .neu)'
 
     preprocess = pyre.properties.bool(default=False)
     preprocess.doc = 'Flag for pre-processing raw data (cleaning) before database creation'
@@ -49,7 +53,7 @@ class MakeDB(pg.components.task, family='pygeodesy.makedb'):
         if self.directory is None and self.filelist is not None:
             filelist = np.loadtxt(self.filelist, dtype=bytes).astype(str)
         elif self.directory is not None and self.filelist is None:
-            fname = pb.db.utils.buildFileList(self.directory, self.format, self.extension)
+            fname = pg.db.utils.buildFileList(self.directory, plexus.data_format, self.extension)
             filelist = np.loadtxt(fname, dtype=bytes).astype(str)
         else:
             assert False, 'Must provide input directory or file list'
@@ -58,14 +62,12 @@ class MakeDB(pg.components.task, family='pygeodesy.makedb'):
         engine = pg.db.Engine(dbname=self.dbname, dbtype=self.dbtype)
 
         # Initialize an instrument
-        inst = pg.instrument.select(self.type, fmt=self.format)
+        inst = pg.instrument.select(plexus.data_type, fmt=plexus.data_format)
         # Set its format for reading ASCII data
-        inst.updateASCIIformat(self.format, columns=self.columns)
-        # Parse any fixed width strings
-        inst.parseFixedWidths(self.fixed_widths)
+        inst.updateASCIIformat(plexus.data_format, columns=self.column_fmt)
 
         # Read a metadata file if provided
-        inst.read_metadata_ascii(self.metafile, fmtdict=self.metafmt)
+        inst.read_metadata_ascii(self.metafile, self.metafmt)
         meta_dict = inst.reformat_metadata(fmt='dict')
 
         # Initialize the database

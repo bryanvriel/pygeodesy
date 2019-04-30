@@ -3,6 +3,7 @@
 import pyre
 import pygeodesy as pg
 import pandas as pd
+import os
 
 class Detrend(pg.components.task, family='pygeodesy.detrend'):
     """
@@ -12,10 +13,10 @@ class Detrend(pg.components.task, family='pygeodesy.detrend'):
     input = pyre.properties.str(default='sqlite:///data.db')
     input.doc = 'Input time series database'
 
-    output = pyre.properties.str(default='sqlite:///sub.db')
+    output = pyre.properties.str(default='sqlite:///detrended.db')
     output.doc = 'Output detrended time series database'
 
-    model = pyre.properties.str(default=None)
+    model = pyre.properties.str()
     model.doc = 'Time series model database'
 
     remove = pyre.properties.str(default='secular, seasonal')

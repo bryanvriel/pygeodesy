@@ -16,17 +16,17 @@ class Plot(pg.components.task, family='pygeodesy.plot'):
     input = pyre.properties.str(default='sqlite:///data.db')
     input.doc = 'Input time series database'
 
-    component = pyre.properties.str(default='up')
-    component.doc = 'Deformation component to model'
+    component = pyre.properties.str(default='all')
+    component.doc = 'Deformation component to model (default: all)'
 
     residual = pyre.properties.bool(default=False)
-    residual.doc = 'Plot (data - model)'
+    residual.doc = 'Plot (data - model) (default: False)'
 
     stations = pyre.properties.str(default=None)
     stations.doc = 'List of stations to plot'
 
     save = pyre.properties.bool(default=False)
-    save.doc = 'Flag to save figure to file'
+    save.doc = 'Flag to save figure to file (default: False)'
 
     tstart = pyre.properties.float(default=None)
     tstart.doc = 'Starting decimal year for plot'
@@ -37,8 +37,8 @@ class Plot(pg.components.task, family='pygeodesy.plot'):
     ylim = pyre.properties.str(default=None)
     ylim.doc = 'Y-limit for plot'
 
-    model = pyre.properties.str(default='filt')
-    model.doc = 'Model component to plot (secular, seasonal, transient, step, full, filt)'
+    model = pyre.properties.str(default='full')
+    model.doc = 'Model component to plot (secular, seasonal, transient, step, full)'
 
     output_dir = pyre.properties.str(default='figures')
     output_dir.doc = 'Directory for saving figures'
@@ -100,9 +100,6 @@ class Plot(pg.components.task, family='pygeodesy.plot'):
         tstart = np.datetime64(self.tstart) if self.tstart is not None else None
         tend = np.datetime64(self.tend) if self.tend is not None else None
 
-        # Determine y-axis bounds
-        y0, y1 = [float(val) for val in self.ylim.split(',')]
-
         # Set the figure size
         figsize = (self.figwidth, self.figheight) 
         fig, axes = plt.subplots(nrows=len(components), figsize=figsize)
@@ -145,6 +142,7 @@ class Plot(pg.components.task, family='pygeodesy.plot'):
                     std = np.nanmedian(np.abs(residual - np.nanstd(residual)))
                     residual[np.abs(residual) > 4*std] = np.nan
                     line, = ax.plot(dates, residual, 'o', alpha=0.6, zorder=10)
+
                 # Or data and model
                 else:
                     line, = ax.plot(dates, data, 'o', alpha=0.6, zorder=10)
@@ -162,16 +160,13 @@ class Plot(pg.components.task, family='pygeodesy.plot'):
                 ax.tick_params(labelsize=18)
                 ax.set_ylabel(component, fontsize=18)
                 ax.set_xlim(tstart, tend)
-                ax.set_ylim(y0, y1)
-                #ax.set_xticks(ax.get_xticks()[::2])
+                if self.ylim is not None:
+                    y0, y1 = [float(val) for val in self.ylim.split(',')]
+                    ax.set_ylim(y0, y1)
 
             axes[0].set_title(statname, fontsize=18)
             axes[-1].set_xlabel('Year', fontsize=18)
-
-            #plt.savefig('temp.png'); sys.exit()
-            #plt.show()
-            #sys.exit()
-
+            
             if self.save:
                 plt.savefig('%s/%s_%s.png' % (self.output_dir, statname, component), 
                     dpi=200, bbox_inches='tight')

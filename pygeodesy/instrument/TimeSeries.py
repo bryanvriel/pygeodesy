@@ -187,18 +187,17 @@ class TimeSeries:
         return
 
 
-    def read_metadata_ascii(self, filename, fmtdict, comment='#', delimeter=None):
+    def read_metadata_ascii(self, filename, fmt, comment='#', delimeter=None):
         """
         Read coordinate metadata from an ASCII file.
         """
         self.clear()
         if filename is None:
             return
-        assert fmtdict is not None, 'Need to specify a format for reading metadata.'
 
         # Parse the fmtdict string to make a dictionary
         columns = {}
-        for keyval_str in fmtdict.strip('{}').split(','):
+        for keyval_str in fmt.split(','):
             key, value = keyval_str.split(':')
             columns[key.strip()] = int(value)
 

@@ -1,7 +1,7 @@
 #-*- coding: utf-8
 
 from .Network import Network
-from .StrainGenerator import StrainGenerator
+from .StationGenerator import StationGenerator
 from . import utils
 
 # end of file

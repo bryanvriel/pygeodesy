@@ -3,8 +3,8 @@
 import numpy as np
 import datetime as dtime
 import pandas as pd
+from tqdm import tqdm
 import sys
-
 
 class Interface:
     """
@@ -42,22 +42,16 @@ class Interface:
         print('')
         for filecnt, filepath in enumerate(filelist):
 
-            if filecnt % 100 == 0:
+            if filecnt % 50 == 0:
                 sys.stdout.write(' - file %4d / %4d\r' % (filecnt, len(filelist)))
                 sys.stdout.flush()
-
-            # If fixed widths were provided, use those via pandas
-            if self.inst.fixedWidths is not None:
-                df = pd.read_fwf(filepath, widths=self.inst.fixedWidths, comment='#')
-                all_data = df.values
-
-            # Or load all the data using numpy into an array of strings
-            else:
-                try:
-                    all_data = np.atleast_2d(np.loadtxt(filepath, dtype=bytes).astype(str))
-                except ValueError:
-                    print('Wrong number of columns for file', filepath)
-                    continue
+            
+            # Load all the data using numpy into an array of strings
+            try:
+                all_data = np.atleast_2d(np.loadtxt(filepath, dtype=bytes).astype(str))
+            except ValueError:
+                print('Wrong number of columns for file', filepath)
+                continue
             Nobs = all_data.shape[0]
 
             # A little string parsing to get the station id
@@ -146,8 +140,8 @@ class Interface:
         return
 
 
-    def subset_table(self, idlist, engine_out, tstart=None, tend=None,
-        filelist=[], scale=1.0, block_size=10):
+    def subset_table(self, idlist, engine_out, tstart=None, tend=None, filelist=[],
+                     scale=1.0, block_size=10):
         """
         Subset a raw data table using a list of station IDs, and perform
         an outer join using the dates.
@@ -173,7 +167,7 @@ class Interface:
                 
                 # Query database for current station+component 
                 data = pd.read_sql_query(query % (component, component, statname),
-                    self.engine.engine)
+                                         self.engine.engine)
                 new_data_df = data[['DATE', component]]
                 new_sigma_df = data[['DATE', 'sigma_' + component]]
 
@@ -196,9 +190,9 @@ class Interface:
     
             # Reduce to make single data frame for current component
             data_df = reduce(lambda left,right: pd.merge(left, right, how='outer',
-                on='DATE'), data_df)
+                             on='DATE'), data_df)
             sigma_df = reduce(lambda left,right: pd.merge(left, right, how='outer',
-                on='DATE'), sigma_df)
+                              on='DATE'), sigma_df)
 
             # Set the DATE column to be the index in order to resample
             data_df.index = pd.to_datetime(data_df['DATE'], format='%Y-%m-%d %H:%M:%S.%f')
@@ -213,10 +207,10 @@ class Interface:
             if ind is not None:
                 data_df = data_df[ind]
                 sigma_df = sigma_df[ind]
-
+ 
             # Resample to an evenly spaced date range
-            data_df = data_df.resample('D').sum().reset_index()
-            sigma_df = sigma_df.resample('D').sum().reset_index()
+            data_df = data_df.resample('D').mean().reset_index()
+            sigma_df = sigma_df.resample('D').mean().reset_index()
 
             # Make date a separate column again
             data_df.rename(columns={'index': 'DATE'}, inplace=True)
@@ -224,9 +218,9 @@ class Interface:
 
             # Save to table
             data_df.reset_index(drop=True).to_sql(component, engine_out.engine,
-                if_exists='replace')
+                                                  if_exists='replace')
             sigma_df.reset_index(drop=True).to_sql('sigma_' + component, engine_out.engine,
-                if_exists='replace')
+                                                   if_exists='replace')
 
         return
 

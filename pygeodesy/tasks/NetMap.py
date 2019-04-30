@@ -86,14 +86,16 @@ class NetMap(pg.components.task, family='pygeodesy.netmap'):
                         data = network.get(comp, name_closest, with_date=False)
                         data = data.values.squeeze()
 
+                        print(name_closest, data)
+
                         # Try to read model data
                         fit = pg.view.utils.model_and_detrend(data, engine, name_closest,
                                                               comp, self.model)
 
                         # Remove means
-                        dat_mean = np.nanmean(data)
-                        data -= dat_mean
-                        fit -= dat_mean
+                        #dat_mean = np.nanmean(data)
+                        #data -= dat_mean
+                        #fit -= dat_mean
 
                         # Compute variance of data if possible
                         try:

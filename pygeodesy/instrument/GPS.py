@@ -20,8 +20,8 @@ class GPS(TimeSeries):
     
     # Default column settings
     columns = {'east': 0, 'north': 1, 'up': 2, 'sigma_east': 3, 'sigma_north': 4,
-        'sigma_up': 5, 'year': None, 'month': None, 'day': None, 'hour': None, 
-        'doy': None}
+               'sigma_up': 5, 'year': None, 'month': None, 'day': None, 'hour': None, 
+               'doy': None}
 
 
     def __init__(self, name='gps', stnfile=None, datformat=None, **kwargs):
@@ -48,23 +48,22 @@ class GPS(TimeSeries):
         if fmt is not None:
             if fmt == 'gipsy':
                 new_columns = {'east': 0, 'north': 1, 'up': 2, 'sigma_east': 3,
-                    'sigma_north': 4, 'sigma_up': 5, 'year': 9, 'month': 10,
-                    'day': 11, 'hour': 12}
+                               'sigma_north': 4, 'sigma_up': 5, 'year': 9, 'month': 10,
+                               'day': 11, 'hour': 12}
                 self.read_header = True
             elif fmt == 'sopac':
                 new_columns = {'year': 1, 'doy': 2, 'north': 3, 'east': 4, 'up': 5,
-                    'sigma_north': 6, 'sigma_east': 7, 'sigma_up': 8}
+                               'sigma_north': 6, 'sigma_east': 7, 'sigma_up': 8}
                 self.read_header = True
             elif fmt == 'gipsy_tseries':
                 new_columns = {'east': 1, 'north': 2, 'up': 3, 'sigma_east': 4,
-                    'sigma_north': 5, 'sigma_up': 6, 'year': 11, 'month': 12,
-                    'day': 13, 'hour': 14}
+                               'sigma_north': 5, 'sigma_up': 6, 'year': 11, 'month': 12,
+                               'day': 13, 'hour': 14}
 
         # Or parse 'columns' string to make a dictionary
         elif columns is not None:
             new_columns = {}
-            fields = columns.strip('{}').split(',')
-            for keyval_str in columns.strip('{}').split(','):
+            for keyval_str in columns.split(','):
                 key, value = keyval_str.split(':')
                 new_columns[key.strip()] = int(value)
 

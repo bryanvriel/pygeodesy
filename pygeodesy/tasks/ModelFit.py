@@ -23,44 +23,50 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
     output = pyre.properties.str(default='sqlite:///sub.db')
     output.doc = 'Output time series model database'
 
-    nstd = pyre.properties.int(default=5)
-    nstd.doc = 'Number of deviations for outlier threshold'
-
-    t0 = pyre.properties.float(default=None)
-    t0.doc = 'Starting decimal year of model'
-
-    tf = pyre.properties.float(default=None)
-    tf.doc = 'Ending decimal year of model'
-
-    penalty = pyre.properties.float(default=1.0)
-    penalty.doc = 'Regularization parameter for model estimator'
-
-    output_amp = pyre.properties.str(default=None)
-    output_amp.doc = 'Filename for saving seasonal amplitudes for each station'
-
-    output_phase = pyre.properties.str(default=None)
-    output_phase.doc = 'Filename for saving seasonal phase for each station'
-
-    user = pyre.properties.str(default=None)
+    user = pyre.properties.str()
     user.doc = 'Python file defining temporal dictionary'
 
+    nstd = pyre.properties.int(default=5)
+    nstd.doc = 'Number of deviations for outlier threshold (default: 5)'
+
+    t0 = pyre.properties.float(default=None)
+    t0.doc = 'Starting decimal year of model (default: None)'
+
+    tf = pyre.properties.float(default=None)
+    tf.doc = 'Ending decimal year of model (default: None)'
+
+    penalty = pyre.properties.float(default=1.0)
+    penalty.doc = 'Regularization parameter for model estimator (default: 1.0)'
+
+    output_amp = pyre.properties.str(default=None)
+    output_amp.doc = 'Filename for optionally saving seasonal amplitudes for each station'
+
+    output_phase = pyre.properties.str(default=None)
+    output_phase.doc = 'Filename for optionally saving seasonal phase for each station'
+
     num_iter = pyre.properties.int(default=1)
-    num_iter.doc = 'Number of iterations for iterative least squares'
+    num_iter.doc = 'Number of iterations for iterative least squares (default: 1)'
+
+    rw_iter = pyre.properties.int(default=1)
+    rw_iter.doc = 'Number of re-weighting iterations for LassoRegression (default: 1)'
 
     solver = pyre.properties.str(default='RidgeRegression')
     solver.doc = 'Name of solver from [RidgeRegression, LassoRegression]'
 
     scale = pyre.properties.float(default=1.0)
-    scale.doc = 'Scale observations by factor'
+    scale.doc = 'Scale observations by factor (default: 1.0)'
 
     special_stats = pyre.properties.str(default=None)
     special_stats.doc = 'List of stations to allow for 10x higher std threshold'
 
     std_thresh = pyre.properties.float(default=1.0e10)
-    std_thresh.doc = 'Absolute deviation threshold for bad stations'
+    std_thresh.doc = 'Absolute deviation threshold for bad stations (default: 1.0e10)'
 
-    min_timespan = pyre.properties.float(default=365.0*40)
-    min_timespan.doc = 'Minimum number of days of valid data to keep station'
+    min_timespan = pyre.properties.float(default=365.0)
+    min_timespan.doc = 'Minimum timespan (days) of valid data to keep station (default: 365.0)'
+
+    min_valid = pyre.properties.int(default=100)
+    min_valid.doc = 'Minimum number of valid observations to keep station (default: 100)'
 
     @pyre.export
     def main(self, plexus, argv):
@@ -102,17 +108,19 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
         model = pg.model.Model(network.dates, collection=collection, t0=self.t0, tf=self.tf)
 
         # Create a solver
-        print('Creating solver')
-        try:
-            Solver = getattr(solvers, self.solver)
-            if self.solver == 'LassoRegression':
-                solver = Solver(model.reg_indices, self.penalty, regMat=iCm,
-                    estimate_uncertainty=True)
-            else:
-                solver = Solver(model.reg_indices, self.penalty, regMat=iCm)
-        except AttributeError:
-            print('Specified solver not supported.')
-            sys.exit()
+        solver = LassoRegression(model.reg_indices, self.penalty, rw_iter=self.rw_iter)
+        print(solver)
+
+        #try:
+        #    Solver = getattr(solvers, self.solver)
+        #    if self.solver == 'LassoRegression':
+        #        solver = Solver(model.reg_indices, self.penalty, rw_iter=self.rw_iter,
+        #                        estimate_uncertainty=True)
+        #    else:
+        #        solver = Solver(model.reg_indices, self.penalty, regMat=iCm)
+        #except AttributeError:
+        #    print('Specified solver not supported.')
+        #    sys.exit()
 
         # Make list of any special stations with higher std threshold
         if self.special_stats is not None:
@@ -137,9 +145,6 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
             coeff_dat = {}
             coeff_sigma_dat = {}
             for statcnt, statname in enumerate(network.sub_names):
-
-                #if statname != 'srgd':
-                #    continue
 
                 # Scale data
                 data_df[statname] *= self.scale
@@ -167,7 +172,7 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
                     # Construct subset indices for inversion
                     ind = np.isfinite(dat) * np.isfinite(wgt) * model.time_mask
                     nvalid = ind.nonzero()[0].size
-                    if nvalid < self.nvalid:
+                    if nvalid < self.min_valid:
                         print('Skipping %s due to too few good data' % statname)
                         isStatGood = False
                         break
@@ -181,7 +186,7 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
                         break
 
                     # Perform least squares
-                    mvec = model.invert(solver, dat)#, wgt=wgt)
+                    mvec = model.invert(solver, dat) #, wgt=wgt)
 
                     # Save coefficients and uncertainties
                     coeff_dat[statname] = mvec
@@ -190,15 +195,7 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
                     # Model performs reconstruction (only for detecting outliers)
                     fit_dict = model.predict(mvec)
                     filt_signal = fit_dict['full']
-
-                    #fit = fit_dict['secular'] + fit_dict['step']
-                    #fit = fit_dict['full']
-                    #plt.plot(dat[ind], 'o')
-                    #plt.plot(fit[ind], '-r')
-                    #plt.plot(fit_dict['transient'][ind], '-g')
-                    #plt.show()
-                    #plt.close('all')
-
+                    
                     # Compute misfit and standard deviation
                     misfit = dat - filt_signal
                     stdev = np.nanstd(misfit)
@@ -307,10 +304,10 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
 
 
                 # Write secular data if requested
-                if self.output_secular is not None:
-                    pass
-                    #with open(self.output_secular, 'w') as sfid:
-                    #    for statname in secular_dat.items():
+                #if self.output_secular is not None:
+                #    pass
+                #    with open(self.output_secular, 'w') as sfid:
+                #        for statname in secular_dat.items():
                         
             else:
                 comm.send(results, dest=0, tag=77)
@@ -364,5 +361,29 @@ def loadDefaultCollection(t):
 
     return collection
 
+
+class LassoRegression:
+
+    def __init__(self, reg_indices, penalty, rw_iter=1, estimate_uncertainty=False):
+
+        import SparseConeQP as sp
+        self.cutoff = reg_indices[0]
+        self.penalty = penalty
+        self.rw_iter = rw_iter
+        self.solver = sp.BaseOpt(cutoff=self.cutoff, maxiter=self.rw_iter, eps=1.0e-4)
+
+    def invert(self, G, d, wgt=None):
+        m = self.solver.invert(G, d, self.penalty)[0]
+        Cm = np.eye(m.size)
+        return m, Cm
+
+    def __repr__(self):
+        msg  = 'Lasso Regression:\n'
+        msg += '  - cutoff: %d\n' % self.cutoff
+        msg += '  - penalty: %f\n' % self.penalty
+        msg += '  - rw_iter: %d\n' % self.rw_iter
+        return msg
+
+    
 
 # end of file

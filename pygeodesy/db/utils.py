@@ -5,7 +5,7 @@ import datetime
 import os
 
 def buildFileList(input_dir, fmt, extension):
-    if fmt == 'gipsy':
+    if fmt is not None and fmt == 'gipsy':
         fname = buildFileList_gipsy(input_dir)
     else:
         fname = buildFileList_generic(input_dir, extension)

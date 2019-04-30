@@ -32,7 +32,7 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
     quiverkey = pyre.properties.float(default=None)
     quiverkey.doc = 'Reference vector magnitude for quiver legend'
 
-    model = pyre.properties.str(default='filt')
+    model = pyre.properties.str(default=None)
     model.doc = 'Model component to plot (secular, seasonal, transient, step, full, filt)'
 
     window = pyre.properties.str(default=None)
@@ -64,21 +64,43 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
         # Read metadata
         meta = engine.meta()
 
+        # Parse the window string to get a start and end time
+        if self.window is not None:
+
+            # Make datetimes
+            tstart, tend = self.window.split(',')
+            tstart = dtime.datetime.strptime(tstart.strip(), '%Y-%m-%d')
+            tend = dtime.datetime.strptime(tend.strip(), '%Y-%m-%d')
+
+            # Make a time mask
+            tmask = (network.dates > tstart) * (network.dates < tend)
+        else:
+            tmask = np.ones(network.tdec.size, dtype=bool)
+
         # Build the velocity arrays
         east = []; north = []
+
+        # Use modeled time series
         if self.model is not None:
 
             for statname in meta['id']:
+
+                # Get modeled displacement data
                 print(statname)
                 east_df = network.get('%s_east' % self.model, statname)
                 north_df = network.get('%s_north' % self.model, statname)
 
-                # Get slopes
-                phi_east = np.polyfit(network.tdec, east_df.values, 1)
-                phi_north = np.polyfit(network.tdec, north_df.values, 1)
+                # Mask out NaN values
+                mask = (tmask * np.isfinite(east_df.values.squeeze()) *
+                        np.isfinite(north_df.values.squeeze()))
+
+                # Fit polynomial (1st-order)
+                phi_east = np.polyfit(network.tdec[mask], east_df.values[mask], 1)
+                phi_north = np.polyfit(network.tdec[mask], north_df.values[mask], 1)
                 east.append(phi_east[0])
                 north.append(phi_north[0])
 
+        # Or coefficient indices
         elif self.coeff_index is not None:
 
             for statname in meta['id']:
@@ -87,26 +109,25 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
                 east.append(east_df.values[self.coeff_index])
                 north.append(north_df.values[self.coeff_index])
 
-        elif self.window is not None:
-
-            # Parse the window string to get a start and end time
-            tstart, tend = self.window.split(',')
-            tstart = dtime.datetime.strptime(tstart.strip(), '%Y-%m-%d')
-            tend = dtime.datetime.strptime(tend.strip(), '%Y-%m-%d')
-
-            # Make a time mask
-            tind = (network.dates > tstart) * (network.dates < tend)
-            tsub = network.tdec[tind].squeeze()
-
+        # Or displacement data
+        else:
+        
             # Loop over stations
             for statname in meta['id']:
+
+                # Get observed displacement data
                 print(statname)
                 if statname in ['pcal']: continue
                 east_df = network.get('east', statname)
                 north_df = network.get('north', statname)
 
-                east_data = east_df.values[tind].squeeze()
-                north_data = north_df.values[tind].squeeze()
+                # Mask out NaN values
+                mask = (tmask * np.isfinite(east_df.values.squeeze()) *
+                        np.isfinite(north_df.values.squeeze()))
+
+                # Fit polynomial (1st-order)
+                east_data = east_df.values[mask].squeeze()
+                north_data = north_df.values[mask].squeeze()
                 finite = np.isfinite(east_data) * np.isfinite(north_data)
                 nfinite = len(finite.nonzero()[0])
                 if nfinite < 10:
@@ -117,7 +138,6 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
                     phi_north = np.polyfit(tsub[finite], north_data[finite], 1)
                     east.append(phi_east[0])
                     north.append(phi_north[0])
-                    
 
         if self.quiverkey is not None:
             qkey = self.quiverkey
@@ -136,7 +156,7 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
 
         scale = self.scale if self.scale is not None else None
         q = bmap.quiver(meta['lon'].values, meta['lat'].values, east, north, 
-            latlon=True, scale=scale)
+                        latlon=True, scale=scale)
         plt.quiverkey(q, 0.9, 0.1, qkey, '%4.2f' % qkey, coordinates='axes')
         plt.show()
 

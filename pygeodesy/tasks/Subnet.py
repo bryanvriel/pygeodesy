@@ -22,14 +22,14 @@ class Subnet(pg.components.task, family='pygeodesy.subnet'):
     station_list = pyre.properties.str(default=None)
     station_list.doc = 'Filename containing list of stations to select'
 
-    tstart = pyre.properties.float(default=None)
-    tstart.doc = 'Starting decimal year of time window'
+    tstart = pyre.properties.str(default=None)
+    tstart.doc = 'Starting date of time window'
 
-    tend = pyre.properties.float(default=None)
-    tend.doc = 'Ending decimal year of time window'
+    tend = pyre.properties.str(default=None)
+    tend.doc = 'Ending date of time window'
 
     scale = pyre.properties.float(default=1.0)
-    scale.doc = 'Scale observations by factor'
+    scale.doc = 'Scale observations by factor (default: 1.0)'
 
     @pyre.export
     def main(self, plexus, argv):
@@ -58,30 +58,25 @@ class Subnet(pg.components.task, family='pygeodesy.subnet'):
         # Get list of files 
         files = engine.getUniqueFiles()
 
-        # Use polynomial for a mask
-        if self.poly is not None:
+        # If file of list of stations is provided, use that first
+        if self.station_list is not None:
+            # Read stations
+            input_stations = np.loadtxt(self.station_list, dtype=bytes).astype(str)
+            # Keep ones that are in the database
+            stations = np.intersect1d(input_stations, names)
 
+        # Or use polynomial for a mask
+        elif self.poly is not None:
             # Cache the raw lon/lat values
             lon, lat = meta['lon'].values, meta['lat'].values
-
             # Load points from polynomial file
             from matplotlib.path import Path
             plon, plat = np.loadtxt(self.poly, unpack=True)
-        
             # Make a path object to compute mask
             poly = Path(np.column_stack((plon, plat)))
             mask = poly.contains_points(list(zip(lon, lat)))
-
             # Subset stations
             stations = names[mask]
-
-        elif self.station_list is not None:
-            
-            # Read stations
-            input_stations = np.loadtxt(self.station_list, dtype=bytes).astype(str)
-
-            # Keep ones that are in the database
-            stations = np.intersect1d(input_stations, names)
 
         else:
             assert False, 'Must input list of stations or polynomial.'

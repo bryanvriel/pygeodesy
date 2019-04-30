@@ -15,22 +15,22 @@ class Filter(pg.components.task, family='pygeodesy.filter'):
     output.doc = 'Output filtered time series database'
 
     remove_outliers = pyre.properties.bool(default=False)
-    remove_outliers.doc = 'Flag to remove outliers during filtering'
+    remove_outliers.doc = 'Flag to remove outliers during filtering (default: False)'
 
     mask = pyre.properties.bool(default=False)
-    mask.doc = 'Flag to mask out invalid data'
+    mask.doc = 'Flag to mask out invalid data after filtering (default: False)'
 
     kernel_size = pyre.properties.int(default=7)
-    kernel_size.doc = 'Kernel size for filter'
+    kernel_size.doc = 'Kernel size for filter (default: 7)'
 
     nstd = pyre.properties.int(default=5)
-    nstd.doc = 'Number of deviations for outlier threshold'
+    nstd.doc = 'Number of deviations for outlier threshold (default: 5)'
 
     std_thresh = pyre.properties.float(default=100.0)
-    std_thresh.doc = 'Absolute deviation threshold for bad stations'
+    std_thresh.doc = 'Absolute deviation threshold for bad stations (default: 100.0)'
 
     deviator = pyre.properties.str(default='std')
-    deviator.doc = 'Deviation metric (std, mad)'
+    deviator.doc = 'Deviation metric (std, mad) (default: std)'
 
     log = pyre.properties.bool(default=False)
     log.doc = 'Write info to log file filter.log'
@@ -42,18 +42,18 @@ class Filter(pg.components.task, family='pygeodesy.filter'):
         """
 
         # Create engine for input database
-        engine = Engine(url=self.input)
+        engine = pg.db.Engine(url=self.input)
 
         # And for output
-        engine_out = Engine(url=self.output)
+        engine_out = pg.db.Engine(url=self.output)
         # Also initialize it
         engine_out.initdb(new=True, ref_engine=engine)
 
         # Initialize an instrument
-        inst = instrument.select(plexus.data_type)
+        inst = pg.instrument.select(plexus.data_type)
 
         # Make a network object
-        network = Network(inst, engine)
+        network = pg.network.Network(inst, engine)
 
         # Filter
         network.filterData(engine_out, self.kernel_size, mask=self.mask,

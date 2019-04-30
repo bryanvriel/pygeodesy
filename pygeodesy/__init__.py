@@ -2,13 +2,10 @@
 
 # The submodules
 from . import db
-
-#from . import network
-#from . import db
-#from . import instrument
-#from . import model
-#from . import view
-#from .configuration import Configuration
+from . import network
+from . import instrument
+from . import model
+from . import view
 
 # Make action public
 from .components import action
