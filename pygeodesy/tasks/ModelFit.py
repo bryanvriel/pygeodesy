@@ -10,7 +10,6 @@ import pygeodesy as pg
 import pyre
 
 from giant.utilities import timefn
-import giant.solvers as solvers
 
 class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
     """
@@ -108,19 +107,17 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
         model = pg.model.Model(network.dates, collection=collection, t0=self.t0, tf=self.tf)
 
         # Create a solver
-        solver = LassoRegression(model.reg_indices, self.penalty, rw_iter=self.rw_iter)
+        try:
+            Solver = getattr(pg.model.solvers, self.solver)
+            if self.solver == 'LassoRegression':
+                solver = Solver(model.reg_indices, self.penalty, rw_iter=self.rw_iter,
+                                estimate_uncertainty=False)
+            else:
+                solver = Solver(model.reg_indices, self.penalty, regMat=iCm)
+        except AttributeError:
+            print('Specified solver not supported.')
+            sys.exit()
         print(solver)
-
-        #try:
-        #    Solver = getattr(solvers, self.solver)
-        #    if self.solver == 'LassoRegression':
-        #        solver = Solver(model.reg_indices, self.penalty, rw_iter=self.rw_iter,
-        #                        estimate_uncertainty=True)
-        #    else:
-        #        solver = Solver(model.reg_indices, self.penalty, regMat=iCm)
-        #except AttributeError:
-        #    print('Specified solver not supported.')
-        #    sys.exit()
 
         # Make list of any special stations with higher std threshold
         if self.special_stats is not None:
@@ -361,29 +358,5 @@ def loadDefaultCollection(t):
 
     return collection
 
-
-class LassoRegression:
-
-    def __init__(self, reg_indices, penalty, rw_iter=1, estimate_uncertainty=False):
-
-        import SparseConeQP as sp
-        self.cutoff = reg_indices[0]
-        self.penalty = penalty
-        self.rw_iter = rw_iter
-        self.solver = sp.BaseOpt(cutoff=self.cutoff, maxiter=self.rw_iter, eps=1.0e-4)
-
-    def invert(self, G, d, wgt=None):
-        m = self.solver.invert(G, d, self.penalty)[0]
-        Cm = np.eye(m.size)
-        return m, Cm
-
-    def __repr__(self):
-        msg  = 'Lasso Regression:\n'
-        msg += '  - cutoff: %d\n' % self.cutoff
-        msg += '  - penalty: %f\n' % self.penalty
-        msg += '  - rw_iter: %d\n' % self.rw_iter
-        return msg
-
-    
 
 # end of file
