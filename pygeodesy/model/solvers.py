@@ -12,7 +12,6 @@ optimization.
 """
 
 import numpy as np
-import tsinsar as ts
 import matplotlib.pyplot as plt
 from cvxopt import matrix, spdiag, mul, div, sqrt, normal, setseed, log
 from cvxopt import blas, solvers, sparse, spmatrix

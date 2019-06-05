@@ -4,7 +4,6 @@ import numpy as np
 import datetime as dtime
 from mpi4py import MPI
 import pandas as pd
-import tsinsar as ts
 import shutil
 import h5py
 import sys
