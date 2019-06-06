@@ -82,7 +82,7 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
 
         # Use modeled time series
         if self.model is not None:
-
+            print('Fitting line to model component', self.model)
             for statname in meta['id']:
 
                 # Get modeled displacement data
@@ -102,7 +102,7 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
 
         # Or coefficient indices
         elif self.coeff_index is not None:
-
+            print('Using coefficient index', self.coeff_index)
             for statname in meta['id']:
                 east_df = network.get('coeff_east', statname)
                 north_df = network.get('coeff_north', statname)
@@ -111,13 +111,13 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
 
         # Or displacement data
         else:
+            print('Fitting line to time series data')
         
             # Loop over stations
             for statname in meta['id']:
 
                 # Get observed displacement data
                 print(statname)
-                if statname in ['pcal']: continue
                 east_df = network.get('east', statname)
                 north_df = network.get('north', statname)
 
@@ -134,8 +134,8 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
                     east.append(np.nan)
                     north.append(np.nan)
                 else:
-                    phi_east = np.polyfit(tsub[finite], east_data[finite], 1)
-                    phi_north = np.polyfit(tsub[finite], north_data[finite], 1)
+                    phi_east = np.polyfit(network.tdec[mask][finite], east_data[finite], 1)
+                    phi_north = np.polyfit(network.tdec[mask][finite], north_data[finite], 1)
                     east.append(phi_east[0])
                     north.append(phi_north[0])
 
