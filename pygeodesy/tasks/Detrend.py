@@ -1,8 +1,10 @@
 #-*- coding: utf-8 -*-
 
 import pyre
+import numpy as np
 import pygeodesy as pg
 import pandas as pd
+import sys
 import os
 
 class Detrend(pg.components.task, family='pygeodesy.detrend'):
@@ -56,6 +58,14 @@ class Detrend(pg.components.task, family='pygeodesy.detrend'):
         meta.to_sql('metadata', engine_out.engine, if_exists='replace')
         statnames = meta['id'].values.tolist()
 
+        # Make sure station names in metadata exist for every component
+        for component in inst.components:
+            comp_df = pd.read_sql_table('full_' + component, model_engine.engine, index_col='DATE')
+            comp_stat = [name for name in comp_df.columns if name != 'index']
+            statnames = np.intersect1d(statnames, comp_stat)
+        # Convert entries back to Python strings
+        statnames = [str(s) for s in statnames]
+        
         # Columns to extract from input data frame
         read_columns = ['DATE'] + statnames
 

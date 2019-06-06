@@ -160,10 +160,7 @@ class ModelFit(pg.components.task, family='pygeodesy.modelfit'):
                 for iternum in range(n_iter):
         
                     # Remove any obvious outliers
-                    if iternum > 1:
-                        outlierInd = np.abs(dat) > 1000.0
-                    else:
-                        outlierInd = np.abs(dat) > 2000.0
+                    outlierInd = np.abs(dat) > self.std_thresh
                     dat[outlierInd] = np.nan
 
                     # Construct subset indices for inversion

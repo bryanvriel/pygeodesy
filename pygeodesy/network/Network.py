@@ -326,6 +326,8 @@ class Network:
                 # Skip if all NaN
                 if np.isnan(data).sum() == N:
                     continue
+                # Remove median value
+                data -= np.nanmedian(data)
                 # Filter
                 filtered = self.adaptiveMedianFilt(data, kernel_size)
                 # mask
