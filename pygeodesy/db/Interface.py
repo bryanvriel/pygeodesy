@@ -40,17 +40,13 @@ class Interface:
         # Loop over the files
         obs_cnt = 0
         print('')
-        for filecnt, filepath in enumerate(filelist):
-
-            if filecnt % 50 == 0:
-                sys.stdout.write(' - file %4d / %4d\r' % (filecnt, len(filelist)))
-                sys.stdout.flush()
+        for filecnt, filepath in enumerate(tqdm(filelist, desc="Loading Data", unit='files')):
             
             # Load all the data using numpy into an array of strings
             try:
                 all_data = np.atleast_2d(np.loadtxt(filepath, dtype=bytes).astype(str))
             except ValueError:
-                print('Wrong number of columns for file', filepath)
+                tqdm.write("Wrong number of columns for file %s" % filepath)
                 continue
             Nobs = all_data.shape[0]
 
@@ -91,7 +87,7 @@ class Interface:
                 try:
                     self.inst.read_meta_header(filepath, meta_dict=meta_dict)
                 except ValueError:
-                    print('Trouble reading header for', filepath)
+                    tqdm.write('Trouble reading header for %s' % filepath)
                     pass
 
             # Write to table if we meet the chunksize

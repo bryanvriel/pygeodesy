@@ -66,12 +66,14 @@ class NetMap(pg.components.task, family='pygeodesy.netmap'):
             """
             Define what happens when user clicks on the station map.
             """
+            # don't do anything if user clicked outside the map boundaries
+            if (event.xdata is None) or (event.ydata is None): return
             # Find close stations
             dist = np.sqrt((sy - event.ydata)**2 + (sx - event.xdata)**2)
             ind_close = (dist < 10000.0).nonzero()[0]
-            names_close = network.names[ind_close]
             if len(ind_close) > 0:
                 # Find closest one
+                names_close = network.names[ind_close]
                 ind_closest = np.argmin(dist[ind_close])
                 name_closest = names_close[ind_closest]
                 print('Plotting station', name_closest)
@@ -117,9 +119,9 @@ class NetMap(pg.components.task, family='pygeodesy.netmap'):
                     ax.set_ylabel(comp)
                     ax.tick_params(labelsize=12)
 
-            ax_ts[0].set_title(name_closest, fontsize=14)
-            ax_ts[-1].set_xlabel('Year', fontsize=12)
-            fig2.canvas.draw()
+                ax_ts[0].set_title(name_closest, fontsize=14)
+                ax_ts[-1].set_xlabel('Year', fontsize=12)
+                fig2.canvas.draw()
 
         cid = fig1.canvas.mpl_connect('button_press_event', plot_selected_tseries)
         plt.show()

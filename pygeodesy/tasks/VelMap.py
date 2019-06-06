@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import datetime as dtime
 import sys
 import os
+from tqdm import tqdm
 
 class VelMap(pg.components.task, family='pygeodesy.velmap'):
     """
@@ -80,64 +81,56 @@ class VelMap(pg.components.task, family='pygeodesy.velmap'):
         # Build the velocity arrays
         east = []; north = []
 
-        # Use modeled time series
-        if self.model is not None:
-            print('Fitting line to model component', self.model)
-            for statname in meta['id']:
-
-                # Get modeled displacement data
-                print(statname)
-                east_df = network.get('%s_east' % self.model, statname)
-                north_df = network.get('%s_north' % self.model, statname)
-
-                # Mask out NaN values
-                mask = (tmask * np.isfinite(east_df.values.squeeze()) *
-                        np.isfinite(north_df.values.squeeze()))
-
-                # Fit polynomial (1st-order)
-                phi_east = np.polyfit(network.tdec[mask], east_df.values[mask], 1)
-                phi_north = np.polyfit(network.tdec[mask], north_df.values[mask], 1)
-                east.append(phi_east[0])
-                north.append(phi_north[0])
-
-        # Or coefficient indices
-        elif self.coeff_index is not None:
-            print('Using coefficient index', self.coeff_index)
-            for statname in meta['id']:
-                east_df = network.get('coeff_east', statname)
-                north_df = network.get('coeff_north', statname)
-                east.append(east_df.values[self.coeff_index])
-                north.append(north_df.values[self.coeff_index])
-
-        # Or displacement data
-        else:
-            print('Fitting line to time series data')
-        
-            # Loop over stations
-            for statname in meta['id']:
-
-                # Get observed displacement data
-                print(statname)
-                east_df = network.get('east', statname)
-                north_df = network.get('north', statname)
-
-                # Mask out NaN values
-                mask = (tmask * np.isfinite(east_df.values.squeeze()) *
-                        np.isfinite(north_df.values.squeeze()))
-
-                # Fit polynomial (1st-order)
-                east_data = east_df.values[mask].squeeze()
-                north_data = north_df.values[mask].squeeze()
-                finite = np.isfinite(east_data) * np.isfinite(north_data)
-                nfinite = len(finite.nonzero()[0])
-                if nfinite < 10:
-                    east.append(np.nan)
-                    north.append(np.nan)
-                else:
-                    phi_east = np.polyfit(network.tdec[mask][finite], east_data[finite], 1)
-                    phi_north = np.polyfit(network.tdec[mask][finite], north_data[finite], 1)
+        with tqdm(meta['id']) as t:
+            # Use modeled time series
+            if self.model is not None:
+                tqdm.write('Fitting line to model component %s' % self.model)
+                for statname in t:
+                    # Get modeled displacement data
+                    east_df = network.get('%s_east' % self.model, statname)
+                    north_df = network.get('%s_north' % self.model, statname)
+                    # Mask out NaN values
+                    mask = (tmask * np.isfinite(east_df.values.squeeze()) *
+                            np.isfinite(north_df.values.squeeze()))
+                    # Fit polynomial (1st-order)
+                    phi_east = np.polyfit(network.tdec[mask], east_df.values[mask], 1)
+                    phi_north = np.polyfit(network.tdec[mask], north_df.values[mask], 1)
                     east.append(phi_east[0])
                     north.append(phi_north[0])
+
+            # Or coefficient indices
+            elif self.coeff_index is not None:
+                tqdm.write('Using coefficient index %i' % self.coeff_index)
+                for statname in t:
+                    east_df = network.get('coeff_east', statname)
+                    north_df = network.get('coeff_north', statname)
+                    east.append(east_df.values[self.coeff_index])
+                    north.append(north_df.values[self.coeff_index])
+
+            # Or displacement data
+            else:
+                tqdm.write('Fitting line to time series data')
+                # Loop over stations
+                for statname in t:
+                    # Get observed displacement data
+                    east_df = network.get('east', statname)
+                    north_df = network.get('north', statname)
+                    # Mask out NaN values
+                    mask = (tmask * np.isfinite(east_df.values.squeeze()) *
+                            np.isfinite(north_df.values.squeeze()))
+                    # Fit polynomial (1st-order)
+                    east_data = east_df.values[mask].squeeze()
+                    north_data = north_df.values[mask].squeeze()
+                    finite = np.isfinite(east_data) * np.isfinite(north_data)
+                    nfinite = len(finite.nonzero()[0])
+                    if nfinite < 10:
+                        east.append(np.nan)
+                        north.append(np.nan)
+                    else:
+                        phi_east = np.polyfit(network.tdec[mask][finite], east_data[finite], 1)
+                        phi_north = np.polyfit(network.tdec[mask][finite], north_data[finite], 1)
+                        east.append(phi_east[0])
+                        north.append(phi_north[0])
 
         if self.quiverkey is not None:
             qkey = self.quiverkey
