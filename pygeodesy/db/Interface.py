@@ -135,7 +135,8 @@ class Interface:
         """
         meta_df = pd.DataFrame(meta_dict)
         ref_meta = self.engine.meta()
-        meta_df = pd.concat([meta_df, ref_meta]).drop_duplicates(subset='id')
+        if ref_meta.shape[0] > 0:
+            meta_df = pd.concat([meta_df, ref_meta]).drop_duplicates(subset='id')
         meta_df.to_sql('metadata', self.engine.engine, if_exists='replace')
         return
 
